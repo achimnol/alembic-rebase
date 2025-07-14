@@ -229,7 +229,8 @@ class AlembicRebase:
         top_chain = set(self._get_migration_chain(top_head))
         base_chain = self._get_migration_chain(base_head)
 
-        for revision in base_chain:
+        # Iterate through base_chain in reverse order to find the most recent common ancestor
+        for revision in reversed(base_chain):
             if revision in top_chain:
                 return revision
 

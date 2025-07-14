@@ -727,6 +727,99 @@ def downgrade() -> None:
                         assert "Add post tags" in new_content
                         assert "Create tags table" in new_content
 
+    def test_common_ancestor_with_deep_history(self, temp_alembic_env):
+        """Test common ancestor detection with multiple revisions before the common ancestor.
+
+        This test ensures that the algorithm finds the most recent common ancestor
+        and not the first revision in the history.
+        """
+        _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
+
+        with (
+            patch("alembic_rebase.Config") as mock_config,
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            mock_config.return_value = MagicMock()
+            mock_script_instance = MagicMock()
+            mock_script_dir.from_config.return_value = mock_script_instance
+
+            # Create a deeper revision history with multiple revisions before common ancestor
+            # Structure:
+            # 00001 -> 00002 -> 00003 -> 00004 (common ancestor)
+            #                              ├── 1000 -> 1001 (branch A)
+            #                              └── 2000 -> 2001 (branch B)
+
+            def create_mock_revision(rev_id, down_rev):
+                mock_rev = MagicMock()
+                mock_rev.revision = rev_id
+                mock_rev.down_revision = down_rev
+                return mock_rev
+
+            revisions = {
+                "00001a1b2c3d4e": create_mock_revision("00001a1b2c3d4e", None),
+                "00002b2c3d4e5f": create_mock_revision(
+                    "00002b2c3d4e5f", "00001a1b2c3d4e"
+                ),
+                "00003c3d4e5f6a": create_mock_revision(
+                    "00003c3d4e5f6a", "00002b2c3d4e5f"
+                ),
+                "00004d4e5f6a7b": create_mock_revision(
+                    "00004d4e5f6a7b", "00003c3d4e5f6a"
+                ),
+                "1000f3e4d5c6b7": create_mock_revision(
+                    "1000f3e4d5c6b7", "00004d4e5f6a7b"
+                ),
+                "10008a9b0c1d2e": create_mock_revision(
+                    "10008a9b0c1d2e", "1000f3e4d5c6b7"
+                ),
+                "2000e7f8a9b4c5": create_mock_revision(
+                    "2000e7f8a9b4c5", "00004d4e5f6a7b"
+                ),
+                "20003d6e7f8a9b": create_mock_revision(
+                    "20003d6e7f8a9b", "2000e7f8a9b4c5"
+                ),
+            }
+
+            mock_script_instance.get_revision.side_effect = (
+                lambda rev_id: revisions.get(rev_id)
+            )
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            # Test that we find the most recent common ancestor, not the first revision
+            ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
+            assert (
+                ancestor == "00004d4e5f6a7b"
+            )  # Should be the common ancestor, not 00001a1b2c3d4e
+
+            # Test with reversed argument order
+            ancestor = rebase._find_common_ancestor("20003d6e7f8a9b", "10008a9b0c1d2e")
+            assert ancestor == "00004d4e5f6a7b"  # Should be the same common ancestor
+
+            # Test migration chains to ensure they're correct
+            branch_a_chain = rebase._get_migration_chain("10008a9b0c1d2e")
+            expected_a_chain = [
+                "00001a1b2c3d4e",
+                "00002b2c3d4e5f",
+                "00003c3d4e5f6a",
+                "00004d4e5f6a7b",
+                "1000f3e4d5c6b7",
+                "10008a9b0c1d2e",
+            ]
+            assert branch_a_chain == expected_a_chain
+
+            branch_b_chain = rebase._get_migration_chain("20003d6e7f8a9b")
+            expected_b_chain = [
+                "00001a1b2c3d4e",
+                "00002b2c3d4e5f",
+                "00003c3d4e5f6a",
+                "00004d4e5f6a7b",
+                "2000e7f8a9b4c5",
+                "20003d6e7f8a9b",
+            ]
+            assert branch_b_chain == expected_b_chain
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

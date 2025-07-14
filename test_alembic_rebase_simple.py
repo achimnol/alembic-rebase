@@ -281,6 +281,89 @@ def downgrade() -> None:
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
             assert ancestor == "00004a7b9c2e1f"
 
+    def test_find_common_ancestor_deep_history(self, temp_alembic_env):
+        """Test finding common ancestor with multiple revisions before the common ancestor.
+
+        This test prevents regression where the algorithm would return the first
+        revision instead of the most recent common ancestor.
+        """
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        with (
+            patch("alembic_rebase.Config"),
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            # Mock the script directory and revisions
+            mock_script_instance = MagicMock()
+            mock_script_dir.from_config.return_value = mock_script_instance
+
+            # Create a deeper revision history with multiple revisions before common ancestor
+            # Structure:
+            # 00001 -> 00002 -> 00003 -> 00004 (common ancestor)
+            #                              ├── 1000 -> 1001 (branch A)
+            #                              └── 2000 -> 2001 (branch B)
+
+            rev_00001 = MagicMock()
+            rev_00001.revision = "00001a1b2c3d4e"
+            rev_00001.down_revision = None
+
+            rev_00002 = MagicMock()
+            rev_00002.revision = "00002b2c3d4e5f"
+            rev_00002.down_revision = "00001a1b2c3d4e"
+
+            rev_00003 = MagicMock()
+            rev_00003.revision = "00003c3d4e5f6a"
+            rev_00003.down_revision = "00002b2c3d4e5f"
+
+            common_ancestor = MagicMock()
+            common_ancestor.revision = "00004d4e5f6a7b"
+            common_ancestor.down_revision = "00003c3d4e5f6a"
+
+            branch_a1 = MagicMock()
+            branch_a1.revision = "1000f3e4d5c6b7"
+            branch_a1.down_revision = "00004d4e5f6a7b"
+
+            branch_a2 = MagicMock()
+            branch_a2.revision = "10008a9b0c1d2e"
+            branch_a2.down_revision = "1000f3e4d5c6b7"
+
+            branch_b1 = MagicMock()
+            branch_b1.revision = "2000e7f8a9b4c5"
+            branch_b1.down_revision = "00004d4e5f6a7b"
+
+            branch_b2 = MagicMock()
+            branch_b2.revision = "20003d6e7f8a9b"
+            branch_b2.down_revision = "2000e7f8a9b4c5"
+
+            # Setup mock get_revision method
+            def mock_get_revision(rev_id):
+                revisions = {
+                    "00001a1b2c3d4e": rev_00001,
+                    "00002b2c3d4e5f": rev_00002,
+                    "00003c3d4e5f6a": rev_00003,
+                    "00004d4e5f6a7b": common_ancestor,
+                    "1000f3e4d5c6b7": branch_a1,
+                    "10008a9b0c1d2e": branch_a2,
+                    "2000e7f8a9b4c5": branch_b1,
+                    "20003d6e7f8a9b": branch_b2,
+                }
+                return revisions.get(rev_id)
+
+            mock_script_instance.get_revision.side_effect = mock_get_revision
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            # Test that we find the most recent common ancestor, not the first revision
+            ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
+            assert (
+                ancestor == "00004d4e5f6a7b"
+            )  # Should be the common ancestor, not 00001a1b2c3d4e
+
+            # Test with reversed order
+            ancestor = rebase._find_common_ancestor("20003d6e7f8a9b", "10008a9b0c1d2e")
+            assert ancestor == "00004d4e5f6a7b"  # Should be the same common ancestor
+
     def test_validate_revisions_error_cases(self, temp_alembic_env):
         """Test validation error cases."""
         _temp_dir, alembic_ini = temp_alembic_env
