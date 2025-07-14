@@ -180,9 +180,9 @@ def downgrade() -> None:
 
         # Create a linear chain of migrations
         migrations = [
-            {"revision": "rev1", "down_revision": None},
-            {"revision": "rev2", "down_revision": "rev1"},
-            {"revision": "rev3", "down_revision": "rev2"},
+            {"revision": "00004a7b9c2e1f", "down_revision": None},
+            {"revision": "1000f3e4d5c6b7", "down_revision": "00004a7b9c2e1f"},
+            {"revision": "10008a9b0c1d2e", "down_revision": "1000f3e4d5c6b7"},
         ]
 
         self.create_migration_files(temp_dir, migrations)
@@ -197,24 +197,24 @@ def downgrade() -> None:
 
             # Mock revision objects
             rev1 = MagicMock()
-            rev1.revision = "rev1"
+            rev1.revision = "00004a7b9c2e1f"
             rev1.down_revision = None
 
             rev2 = MagicMock()
-            rev2.revision = "rev2"
-            rev2.down_revision = "rev1"
+            rev2.revision = "1000f3e4d5c6b7"
+            rev2.down_revision = "00004a7b9c2e1f"
 
             rev3 = MagicMock()
-            rev3.revision = "rev3"
-            rev3.down_revision = "rev2"
+            rev3.revision = "10008a9b0c1d2e"
+            rev3.down_revision = "1000f3e4d5c6b7"
 
             # Setup mock get_revision method
             def mock_get_revision(rev_id):
-                if rev_id == "rev1":
+                if rev_id == "00004a7b9c2e1f":
                     return rev1
-                if rev_id == "rev2":
+                if rev_id == "1000f3e4d5c6b7":
                     return rev2
-                if rev_id == "rev3":
+                if rev_id == "10008a9b0c1d2e":
                     return rev3
                 return None
 
@@ -223,11 +223,11 @@ def downgrade() -> None:
             rebase = AlembicRebase(str(alembic_ini))
             rebase._load_alembic_config()
 
-            chain = rebase._get_migration_chain("rev3")
-            assert chain == ["rev1", "rev2", "rev3"]
+            chain = rebase._get_migration_chain("10008a9b0c1d2e")
+            assert chain == ["00004a7b9c2e1f", "1000f3e4d5c6b7", "10008a9b0c1d2e"]
 
-            chain = rebase._get_migration_chain("rev2")
-            assert chain == ["rev1", "rev2"]
+            chain = rebase._get_migration_chain("1000f3e4d5c6b7")
+            assert chain == ["00004a7b9c2e1f", "1000f3e4d5c6b7"]
 
     def test_find_common_ancestor(self, temp_alembic_env):
         """Test finding common ancestor between branches."""
@@ -243,33 +243,33 @@ def downgrade() -> None:
 
             # Mock revision objects for branched structure
             base = MagicMock()
-            base.revision = "base"
+            base.revision = "00004a7b9c2e1f"
             base.down_revision = None
 
             branch_a1 = MagicMock()
-            branch_a1.revision = "branch_a1"
-            branch_a1.down_revision = "base"
+            branch_a1.revision = "1000f3e4d5c6b7"
+            branch_a1.down_revision = "00004a7b9c2e1f"
 
             branch_a2 = MagicMock()
-            branch_a2.revision = "branch_a2"
-            branch_a2.down_revision = "branch_a1"
+            branch_a2.revision = "10008a9b0c1d2e"
+            branch_a2.down_revision = "1000f3e4d5c6b7"
 
             branch_b1 = MagicMock()
-            branch_b1.revision = "branch_b1"
-            branch_b1.down_revision = "base"
+            branch_b1.revision = "2000e7f8a9b4c5"
+            branch_b1.down_revision = "00004a7b9c2e1f"
 
             branch_b2 = MagicMock()
-            branch_b2.revision = "branch_b2"
-            branch_b2.down_revision = "branch_b1"
+            branch_b2.revision = "20003d6e7f8a9b"
+            branch_b2.down_revision = "2000e7f8a9b4c5"
 
             # Setup mock get_revision method
             def mock_get_revision(rev_id):
                 revisions = {
-                    "base": base,
-                    "branch_a1": branch_a1,
-                    "branch_a2": branch_a2,
-                    "branch_b1": branch_b1,
-                    "branch_b2": branch_b2,
+                    "00004a7b9c2e1f": base,
+                    "1000f3e4d5c6b7": branch_a1,
+                    "10008a9b0c1d2e": branch_a2,
+                    "2000e7f8a9b4c5": branch_b1,
+                    "20003d6e7f8a9b": branch_b2,
                 }
                 return revisions.get(rev_id)
 
@@ -278,8 +278,8 @@ def downgrade() -> None:
             rebase = AlembicRebase(str(alembic_ini))
             rebase._load_alembic_config()
 
-            ancestor = rebase._find_common_ancestor("branch_a2", "branch_b2")
-            assert ancestor == "base"
+            ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
+            assert ancestor == "00004a7b9c2e1f"
 
     @pytest.mark.asyncio
     async def test_validate_revisions_error_cases(self, temp_alembic_env):
@@ -305,9 +305,9 @@ def downgrade() -> None:
                 await rebase._validate_revisions("nonexistent1", "nonexistent2")
 
             # Test with same revision
-            mock_get_heads.return_value = ["rev1", "rev2"]
+            mock_get_heads.return_value = ["1000a1b2c3d4e5", "2000f6e7d8c9ba"]
             with pytest.raises(AlembicRebaseError, match="cannot be the same"):
-                await rebase._validate_revisions("rev1", "rev1")
+                await rebase._validate_revisions("1000a1b2c3d4e5", "1000a1b2c3d4e5")
 
 
 def test_main_cli_args():
@@ -316,26 +316,26 @@ def test_main_cli_args():
 
     # Test basic argument parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("target_head")
     parser.add_argument("base_head")
+    parser.add_argument("top_head")
     parser.add_argument("--alembic-ini", default="alembic.ini")
     parser.add_argument("--verbose", "-v", action="store_true")
 
-    args = parser.parse_args(["target123", "base456"])
-    assert args.target_head == "target123"
-    assert args.base_head == "base456"
+    args = parser.parse_args(["1000a1b2c3d4e5", "2000f6e7d8c9ba"])
+    assert args.base_head == "1000a1b2c3d4e5"
+    assert args.top_head == "2000f6e7d8c9ba"
     assert args.alembic_ini == "alembic.ini"
     assert not args.verbose
 
     args = parser.parse_args([
-        "target123",
-        "base456",
+        "1000a1b2c3d4e5",
+        "2000f6e7d8c9ba",
         "--alembic-ini",
         "custom.ini",
         "-v",
     ])
-    assert args.target_head == "target123"
-    assert args.base_head == "base456"
+    assert args.base_head == "1000a1b2c3d4e5"
+    assert args.top_head == "2000f6e7d8c9ba"
     assert args.alembic_ini == "custom.ini"
     assert args.verbose
 

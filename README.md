@@ -27,13 +27,13 @@ pip install "sqlalchemy>=1.4,<2.0" alembic asyncpg
 ## Usage
 
 ```bash
-python alembic_rebase.py <target_head> <base_head> [options]
+python alembic_rebase.py [options] <base_head> <top_head>
 ```
 
 ### Arguments
 
-- `target_head`: The revision ID that will remain at the top of the history after rebasing
-- `base_head`: The revision ID that will be moved below the target head in the history
+- `top_head`: The revision ID that will remain at the top of the history after rebasing
+- `base_head`: The revision ID that will be moved below the top head in the history
 
 ### Options
 
@@ -45,42 +45,64 @@ python alembic_rebase.py <target_head> <base_head> [options]
 
 ```bash
 # Basic usage with default alembic.ini
-python alembic_rebase.py abc123def456 789ghi012jkl
+python alembic_rebase.py 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Using custom alembic.ini location
-python alembic_rebase.py --alembic-ini ./configs/db1/alembic.ini abc123 def456
+python alembic_rebase.py --alembic-ini ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Verbose output
-python alembic_rebase.py -v abc123 def456
+python alembic_rebase.py -v 1000a1b2c3d4e5 2000f6e7d8c9ba
 ```
 
 ## How It Works
 
-The script performs the following steps:
+The rebasing process consists of four main phases:
 
-1. **Configuration Loading**: Reads the alembic.ini file to get:
-   - Script location (migration files directory)
-   - Database connection URL (automatically converts to async format)
+### Phase 1: Analysis and Validation
 
-2. **Validation**: Ensures both revision IDs are valid current heads
+1. **Configuration Loading**
+   - Parse `alembic.ini` to extract `script_location` and `sqlalchemy.url`
+   - Convert database URL to async format (`postgresql+asyncpg://`)
+   - Initialize alembic Config and ScriptDirectory objects
 
-3. **Analysis**: Finds the common ancestor between the two diverged branches
+2. **Revision Validation**
+   - Verify both top_head and base_head are solely current database heads
+   - Ensure they are different revisions
+   - Validate that both revisions exist in the migration files
 
-4. **File Rewriting**:
-   - Generates new revision IDs for migrations to be rebased
-   - Updates migration files with new revision IDs and proper linkage
-   - Preserves all migration content (upgrade/downgrade functions)
-   - Renames files to reflect new revision IDs
+3. **Chain Analysis**
+   - Build migration chains for both heads by following `down_revision` links
+   - Find the common ancestor between the two chains
+   - Identify migrations to rebase (the base_head chain followed by the top_head chain from the common ancestor onwards)
 
-5. **Integrity Validation**:
-   - Validates Python syntax of modified files
-   - Ensures proper migration chain linkage
-   - Confirms all required alembic elements are present
+### Phase 2: Downgrade to Common Ancestor
 
-6. **Database Operations**:
-   - Downgrades to the common ancestor
-   - Upgrades to the target head
-   - Applies the rebased migrations with new revision IDs
+1. **Downgrade to Common Ancestor**
+   - Use alembic to downgrade database to the common ancestor revision
+   - This removes all migrations from both diverged branches
+
+### Phase 3: History Rewriting
+
+This tool modifies migration files to reflect the new linearized revision history.
+
+1. **Find the rebasing point**
+   - Get the revision ID of the last migration in the base_head chain after the common ancestor
+   - Get the revision ID of the first migration in the top_head chain after the common ancestor
+
+2. **File Rewriting**
+   - For the first migration, update the `down_revision` field to the revision ID of the last migration of the base_head chain
+   - Preserve all other content (upgrade/downgrade functions, imports, etc.)
+
+3. **Integrity Validation**
+   - Validate Python syntax of modified files
+   - Ensure all required alembic elements are present
+   - Verify migration chain linkage is correct and there is only a single head revision in the history
+
+### Phase 4: Apply Linearized History
+
+1. **Apply Rebased Migrations**
+   - Run the regular alembic upgrade procedure using the new history chain
+   - Database now reflects the rebased state
 
 ## Configuration Requirements
 

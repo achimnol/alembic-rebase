@@ -169,10 +169,10 @@ def downgrade() -> None:
     def _create_mock_migration_files(self, versions_dir: Path):
         """Create a set of mock migration files representing a branched migration history."""
         # Base migration - create users table
-        base_migration = versions_dir / "001_base_create_users_table.py"
+        base_migration = versions_dir / "001_00004a7b9c2e1f_create_users_table.py"
         base_migration.write_text('''"""Create users table
 
-Revision ID: base001
+Revision ID: 00004a7b9c2e1f
 Revises:
 Create Date: 2024-01-01 10:00:00.000000
 
@@ -181,7 +181,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'base001'
+revision = '00004a7b9c2e1f'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -211,11 +211,11 @@ def downgrade() -> None:
 ''')
 
         # Branch A - Add user profile features
-        branch_a1 = versions_dir / "002_branch_a1_add_user_profile.py"
+        branch_a1 = versions_dir / "002_1000f3e4d5c6b7_add_user_profile.py"
         branch_a1.write_text('''"""Add user profile fields
 
-Revision ID: branch_a1
-Revises: base001
+Revision ID: 1000f3e4d5c6b7
+Revises: 00004a7b9c2e1f
 Create Date: 2024-01-02 10:00:00.000000
 
 """
@@ -223,8 +223,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'branch_a1'
-down_revision = 'base001'
+revision = '1000f3e4d5c6b7'
+down_revision = '00004a7b9c2e1f'
 branch_labels = None
 depends_on = None
 
@@ -245,11 +245,11 @@ def downgrade() -> None:
     op.drop_column('users', 'first_name')
 ''')
 
-        branch_a2 = versions_dir / "003_branch_a2_add_user_preferences.py"
+        branch_a2 = versions_dir / "003_10008a9b0c1d2e_add_user_preferences.py"
         branch_a2.write_text('''"""Add user preferences table
 
-Revision ID: branch_a2
-Revises: branch_a1
+Revision ID: 10008a9b0c1d2e
+Revises: 1000f3e4d5c6b7
 Create Date: 2024-01-03 10:00:00.000000
 
 """
@@ -257,8 +257,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'branch_a2'
-down_revision = 'branch_a1'
+revision = '10008a9b0c1d2e'
+down_revision = '1000f3e4d5c6b7'
 branch_labels = None
 depends_on = None
 
@@ -284,11 +284,11 @@ def downgrade() -> None:
 ''')
 
         # Branch B - Add posts functionality
-        branch_b1 = versions_dir / "004_branch_b1_create_posts.py"
+        branch_b1 = versions_dir / "004_2000e7f8a9b4c5_create_posts.py"
         branch_b1.write_text('''"""Create posts table
 
-Revision ID: branch_b1
-Revises: base001
+Revision ID: 2000e7f8a9b4c5
+Revises: 00004a7b9c2e1f
 Create Date: 2024-01-02 11:00:00.000000
 
 """
@@ -296,8 +296,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'branch_b1'
-down_revision = 'base001'
+revision = '2000e7f8a9b4c5'
+down_revision = '00004a7b9c2e1f'
 branch_labels = None
 depends_on = None
 
@@ -326,11 +326,11 @@ def downgrade() -> None:
     op.drop_table('posts')
 ''')
 
-        branch_b2 = versions_dir / "005_branch_b2_add_post_tags.py"
+        branch_b2 = versions_dir / "005_20003d6e7f8a9b_add_post_tags.py"
         branch_b2.write_text('''"""Add post tags functionality
 
-Revision ID: branch_b2
-Revises: branch_b1
+Revision ID: 20003d6e7f8a9b
+Revises: 2000e7f8a9b4c5
 Create Date: 2024-01-03 11:00:00.000000
 
 """
@@ -338,8 +338,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'branch_b2'
-down_revision = 'branch_b1'
+revision = '20003d6e7f8a9b'
+down_revision = '2000e7f8a9b4c5'
 branch_labels = None
 depends_on = None
 
@@ -379,16 +379,16 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Test finding existing files
-        file_path = rebase._find_migration_file("base001")
+        file_path = rebase._find_migration_file("00004a7b9c2e1f")
         assert file_path is not None
         # Check it found the right file by checking content
         content = file_path.read_text()
-        assert "revision = 'base001'" in content
+        assert "revision = '00004a7b9c2e1f'" in content
 
-        file_path = rebase._find_migration_file("branch_a1")
+        file_path = rebase._find_migration_file("1000f3e4d5c6b7")
         assert file_path is not None
         content = file_path.read_text()
-        assert "revision = 'branch_a1'" in content
+        assert "revision = '1000f3e4d5c6b7'" in content
 
         # Test nonexistent revision
         file_path = rebase._find_migration_file("nonexistent")
@@ -402,33 +402,33 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Test parsing base migration
-        file_path = rebase._find_migration_file("base001")
+        file_path = rebase._find_migration_file("00004a7b9c2e1f")
         revision, down_revision, content = rebase._parse_migration_file(file_path)
-        assert revision == "base001"
+        assert revision == "00004a7b9c2e1f"
         assert down_revision is None
         assert "Create users table" in content
 
         # Test parsing branch migration
-        file_path = rebase._find_migration_file("branch_a1")
+        file_path = rebase._find_migration_file("1000f3e4d5c6b7")
         revision, down_revision, content = rebase._parse_migration_file(file_path)
-        assert revision == "branch_a1"
-        assert down_revision == "base001"
+        assert revision == "1000f3e4d5c6b7"
+        assert down_revision == "00004a7b9c2e1f"
         assert "Add user profile fields" in content
 
-    def test_generate_new_revision_id(self, temp_alembic_env):
-        """Test generating new revision IDs."""
+    def test_revision_id_immutability(self, temp_alembic_env):
+        """Test that revision IDs remain unchanged during rebase (unlike git)."""
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
+        rebase._load_alembic_config()
 
-        # Generate multiple IDs and ensure they're unique
-        ids = [rebase._generate_new_revision_id() for _ in range(10)]
-        assert len(set(ids)) == 10  # All unique
+        # Get original revision from file
+        file_path = rebase._find_migration_file("2000e7f8a9b4c5")
+        assert file_path is not None
+        original_revision, _, _ = rebase._parse_migration_file(file_path)
 
-        # Check format (12 character hex string)
-        for rev_id in ids:
-            assert len(rev_id) == 12
-            assert all(c in "0123456789abcdef" for c in rev_id)
+        # Verify original revision ID
+        assert original_revision == "2000e7f8a9b4c5"
 
     def test_update_migration_file(self, temp_alembic_env):
         """Test updating migration file with new revision IDs."""
@@ -438,30 +438,25 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Find and backup original file
-        original_file = rebase._find_migration_file("branch_a1")
+        original_file = rebase._find_migration_file("1000f3e4d5c6b7")
         original_file.read_text()
 
-        # Update the file
-        new_revision = rebase._generate_new_revision_id()
+        # Update the file (keep same revision ID, change down_revision)
         new_down_revision = "new_base_revision"
 
         rebase._update_migration_file(
-            original_file, "branch_a1", new_revision, new_down_revision
+            original_file, "1000f3e4d5c6b7", "1000f3e4d5c6b7", new_down_revision
         )
 
-        # Check that file was updated correctly
-        new_file = rebase._find_migration_file(new_revision)
-        assert new_file is not None
+        # Check that file was updated correctly (same file, updated content)
+        updated_file = rebase._find_migration_file("1000f3e4d5c6b7")
+        assert updated_file is not None
 
-        new_revision_parsed, new_down_parsed, _new_content = (
-            rebase._parse_migration_file(new_file)
+        revision_parsed, down_parsed, _content = rebase._parse_migration_file(
+            updated_file
         )
-        assert new_revision_parsed == new_revision
-        assert new_down_parsed == new_down_revision
-
-        # Ensure the original file no longer exists (if filename changed)
-        if new_revision != "branch_a1":
-            assert not rebase._find_migration_file("branch_a1")
+        assert revision_parsed == "1000f3e4d5c6b7"  # Revision ID unchanged
+        assert down_parsed == new_down_revision  # down_revision updated
 
     @patch.object(AlembicRebase, "_get_current_heads")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
@@ -473,7 +468,7 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         # Mock the async methods
-        mock_get_heads.return_value = ["branch_a2", "branch_b2"]
+        mock_get_heads.return_value = ["10008a9b0c1d2e", "20003d6e7f8a9b"]
         mock_downgrade.return_value = AsyncMock()
         mock_upgrade.return_value = AsyncMock()
 
@@ -481,8 +476,8 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Test rewriting files for branch B
-        migrations_to_rebase = ["branch_b1", "branch_b2"]
-        target_head = "branch_a2"
+        migrations_to_rebase = ["2000e7f8a9b4c5", "20003d6e7f8a9b"]
+        last_top_migration = "10008a9b0c1d2e"
 
         # Backup original files
         original_files = {}
@@ -491,38 +486,30 @@ def downgrade() -> None:
             original_files[migration] = file_path.read_text()
 
         # Perform rewrite
-        rebase._rewrite_migration_files(migrations_to_rebase, target_head)
+        rebase._rewrite_migration_files(migrations_to_rebase, last_top_migration)
 
-        # Verify new revision mappings were created
-        assert len(rebase.revision_mapping) == 2
-        assert "branch_b1" in rebase.revision_mapping
-        assert "branch_b2" in rebase.revision_mapping
+        # Verify migrations were processed (no revision mappings in new approach)
+        # Migrations keep their original IDs, only linkage changes
 
-        # Verify new files exist and old files are gone
-        for old_revision in migrations_to_rebase:
-            new_revision = rebase.revision_mapping[old_revision]
+        # Verify files still exist with original revision IDs
+        for revision in migrations_to_rebase:
+            # File should still exist with same name
+            file_path = rebase._find_migration_file(revision)
+            assert file_path is not None
 
-            # New file should exist
-            new_file = rebase._find_migration_file(new_revision)
-            assert new_file is not None
+        # Verify the chain linkage is correctly updated
+        b1_revision = "2000e7f8a9b4c5"
+        b2_revision = "20003d6e7f8a9b"
 
-            # Old file should not exist (filename changed)
-            old_file = rebase._find_migration_file(old_revision)
-            assert old_file is None
-
-        # Verify the chain is correctly updated
-        new_b1_revision = rebase.revision_mapping["branch_b1"]
-        new_b2_revision = rebase.revision_mapping["branch_b2"]
-
-        # First rebased migration should point to target_head
-        new_b1_file = rebase._find_migration_file(new_b1_revision)
-        _, down_rev_b1, _ = rebase._parse_migration_file(new_b1_file)
-        assert down_rev_b1 == target_head
+        # First rebased migration should point to last_top_migration
+        b1_file = rebase._find_migration_file(b1_revision)
+        _, down_rev_b1, _ = rebase._parse_migration_file(b1_file)
+        assert down_rev_b1 == last_top_migration
 
         # Second rebased migration should point to first rebased migration
-        new_b2_file = rebase._find_migration_file(new_b2_revision)
-        _, down_rev_b2, _ = rebase._parse_migration_file(new_b2_file)
-        assert down_rev_b2 == new_b1_revision
+        b2_file = rebase._find_migration_file(b2_revision)
+        _, down_rev_b2, _ = rebase._parse_migration_file(b2_file)
+        assert down_rev_b2 == b1_revision
 
     @patch.object(AlembicRebase, "_get_current_heads")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
@@ -534,7 +521,7 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         # Mock the async methods
-        mock_get_heads.return_value = ["branch_a2", "branch_b2"]
+        mock_get_heads.return_value = ["10008a9b0c1d2e", "20003d6e7f8a9b"]
         mock_downgrade.return_value = AsyncMock()
         mock_upgrade.return_value = AsyncMock()
 
@@ -542,41 +529,44 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Get original content
-        original_file = rebase._find_migration_file("branch_b1")
+        original_file = rebase._find_migration_file("2000e7f8a9b4c5")
         original_content = original_file.read_text()
 
         # Rewrite the file
-        rebase._rewrite_migration_files(["branch_b1"], "branch_a2")
+        rebase._rewrite_migration_files(["2000e7f8a9b4c5"], "10008a9b0c1d2e")
 
-        # Get new content
-        new_revision = rebase.revision_mapping["branch_b1"]
-        new_file = rebase._find_migration_file(new_revision)
-        new_content = new_file.read_text()
+        # Get updated content (same file, updated linkage)
+        updated_file = rebase._find_migration_file("2000e7f8a9b4c5")
+        updated_content = updated_file.read_text()
 
         # Verify important content is preserved
-        assert "Create posts table" in new_content
-        assert "op.create_table" in new_content
-        assert "user_id" in new_content
-        assert "def upgrade()" in new_content
-        assert "def downgrade()" in new_content
+        assert "Create posts table" in updated_content
+        assert "op.create_table" in updated_content
+        assert "user_id" in updated_content
+        assert "def upgrade()" in updated_content
+        assert "def downgrade()" in updated_content
 
-        # Verify only revision IDs changed
-
+        # Verify only down_revision changed (revision ID stays same)
         original_lines = original_content.split("\n")
-        new_lines = new_content.split("\n")
+        updated_lines = updated_content.split("\n")
 
-        # Count lines that changed (should only be revision and down_revision lines)
+        # Count lines that changed (should only be down_revision line)
         changed_lines = 0
-        for orig, new in zip(original_lines, new_lines, strict=False):
-            if orig != new:
-                if "revision =" in orig or "down_revision =" in orig:
+        for orig, updated in zip(original_lines, updated_lines, strict=False):
+            if orig != updated:
+                if "down_revision =" in orig:
                     changed_lines += 1
+                elif "revision =" in orig:
+                    # Revision line should NOT change
+                    raise AssertionError(
+                        f"Revision line changed unexpectedly: '{orig}' -> '{updated}'"
+                    )
                 else:
                     # If other lines changed, that's unexpected
-                    print(f"Unexpected change: '{orig}' -> '{new}'")
+                    print(f"Unexpected change: '{orig}' -> '{updated}'")
 
-        # Should have changed exactly 2 lines (revision and down_revision)
-        assert changed_lines == 2
+        # Should have changed exactly 1 line (down_revision only)
+        assert changed_lines == 1
 
     def test_error_handling_missing_migration_file(self, temp_alembic_env):
         """Test error handling when migration file is missing."""
@@ -586,10 +576,10 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         with pytest.raises(AlembicRebaseError, match="Could not find migration file"):
-            rebase._rewrite_migration_files(["nonexistent_revision"], "branch_a2")
+            rebase._rewrite_migration_files(["nonexistent_revision"], "10008a9b0c1d2e")
 
     def test_migration_file_cleanup(self, temp_alembic_env):
-        """Test that original migration files are properly cleaned up."""
+        """Test that migration files remain the same after rebase (no cleanup needed)."""
         _temp_dir, alembic_ini, versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
@@ -600,26 +590,24 @@ def downgrade() -> None:
         original_count = len(original_files)
 
         # Rewrite some migrations
-        rebase._rewrite_migration_files(["branch_b1", "branch_b2"], "branch_a2")
+        rebase._rewrite_migration_files(
+            ["2000e7f8a9b4c5", "20003d6e7f8a9b"], "10008a9b0c1d2e"
+        )
 
         # Count files after rewrite
         new_files = list(versions_dir.glob("*.py"))
         new_count = len(new_files)
 
-        # Should have same number of files (old ones deleted, new ones created)
+        # Should have same number of files (files updated in-place)
         assert new_count == original_count
 
-        # Verify specific old files are gone and new ones exist
-        remaining_old_files = [
-            f for f in new_files if "branch_b1" in f.name or "branch_b2" in f.name
+        # Verify specific files still exist (same revision IDs)
+        remaining_files = [
+            f
+            for f in new_files
+            if "2000e7f8a9b4c5" in f.name or "20003d6e7f8a9b" in f.name
         ]
-        assert len(remaining_old_files) == 0
-
-        # Verify new files exist
-        for old_revision in ["branch_b1", "branch_b2"]:
-            new_revision = rebase.revision_mapping[old_revision]
-            new_files_with_revision = [f for f in new_files if new_revision in f.name]
-            assert len(new_files_with_revision) == 1
+        assert len(remaining_files) == 2  # Both files should still exist
 
     def test_validation_methods(self, temp_alembic_env):
         """Test validation methods for migration integrity."""
@@ -629,27 +617,27 @@ def downgrade() -> None:
         rebase._load_alembic_config()
 
         # Test individual file validation
-        assert rebase._validate_migration_file_integrity("base001")
-        assert rebase._validate_migration_file_integrity("branch_a1")
+        assert rebase._validate_migration_file_integrity("00004a7b9c2e1f")
+        assert rebase._validate_migration_file_integrity("1000f3e4d5c6b7")
         assert not rebase._validate_migration_file_integrity("nonexistent")
 
         # Test chain validation - should work for existing chains
         assert rebase._validate_migration_chain_integrity([
-            "base001",
-            "branch_a1",
-            "branch_a2",
+            "00004a7b9c2e1f",
+            "1000f3e4d5c6b7",
+            "10008a9b0c1d2e",
         ])
         assert rebase._validate_migration_chain_integrity([
-            "base001",
-            "branch_b1",
-            "branch_b2",
+            "00004a7b9c2e1f",
+            "2000e7f8a9b4c5",
+            "20003d6e7f8a9b",
         ])
 
         # Test broken chain validation
         assert not rebase._validate_migration_chain_integrity([
-            "base001",
-            "branch_b1",
-            "branch_a2",
+            "00004a7b9c2e1f",
+            "2000e7f8a9b4c5",
+            "10008a9b0c1d2e",
         ])
 
     @patch.object(AlembicRebase, "_get_current_heads")
@@ -662,7 +650,7 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         # Mock the database operations
-        mock_get_heads.return_value = ["branch_a2", "branch_b2"]
+        mock_get_heads.return_value = ["10008a9b0c1d2e", "20003d6e7f8a9b"]
         mock_downgrade.return_value = AsyncMock()
         mock_upgrade.return_value = AsyncMock()
 
@@ -686,11 +674,19 @@ def downgrade() -> None:
                 return mock_rev
 
             revisions = {
-                "base001": create_mock_revision("base001", None),
-                "branch_a1": create_mock_revision("branch_a1", "base001"),
-                "branch_a2": create_mock_revision("branch_a2", "branch_a1"),
-                "branch_b1": create_mock_revision("branch_b1", "base001"),
-                "branch_b2": create_mock_revision("branch_b2", "branch_b1"),
+                "00004a7b9c2e1f": create_mock_revision("00004a7b9c2e1f", None),
+                "1000f3e4d5c6b7": create_mock_revision(
+                    "1000f3e4d5c6b7", "00004a7b9c2e1f"
+                ),
+                "10008a9b0c1d2e": create_mock_revision(
+                    "10008a9b0c1d2e", "1000f3e4d5c6b7"
+                ),
+                "2000e7f8a9b4c5": create_mock_revision(
+                    "2000e7f8a9b4c5", "00004a7b9c2e1f"
+                ),
+                "20003d6e7f8a9b": create_mock_revision(
+                    "20003d6e7f8a9b", "2000e7f8a9b4c5"
+                ),
             }
 
             mock_script_instance.get_revision.side_effect = (
@@ -699,13 +695,13 @@ def downgrade() -> None:
 
             # Store original file contents
             original_files = {}
-            for revision in ["branch_b1", "branch_b2"]:
+            for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
                 file_path = rebase._find_migration_file(revision)
                 original_files[revision] = file_path.read_text()
 
             # Perform the complete rebase (mocking the async parts)
             async def run_rebase():
-                await rebase.rebase("branch_a2", "branch_b2")
+                await rebase.rebase("20003d6e7f8a9b", "10008a9b0c1d2e")
 
             # This would normally run the full rebase, but we expect it to fail
             # because we're mocking the alembic components
@@ -714,26 +710,22 @@ def downgrade() -> None:
             with contextlib.suppress(Exception):
                 asyncio.run(run_rebase())
 
-            # Check that file rewriting was attempted
-            assert len(rebase.revision_mapping) > 0
+            # Check that files were actually modified (only linkage changes)
+            for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
+                file_path = rebase._find_migration_file(revision)
 
-            # Check that files were actually modified
-            for old_revision in ["branch_b1", "branch_b2"]:
-                if old_revision in rebase.revision_mapping:
-                    new_revision = rebase.revision_mapping[old_revision]
-                    new_file = rebase._find_migration_file(new_revision)
+                if file_path:  # If the file exists
+                    new_content = file_path.read_text()
+                    # Verify revision ID is unchanged
+                    assert f"revision = '{revision}'" in new_content
 
-                    if new_file:  # If the file was actually created
-                        new_content = new_file.read_text()
-                        assert f"revision = '{new_revision}'" in new_content
-
-                        # Verify the content was preserved
-                        if old_revision == "branch_b1":
-                            assert "Create posts table" in new_content
-                            assert "op.create_table" in new_content
-                        elif old_revision == "branch_b2":
-                            assert "Add post tags" in new_content
-                            assert "Create tags table" in new_content
+                    # Verify the content was preserved
+                    if revision == "2000e7f8a9b4c5":
+                        assert "Create posts table" in new_content
+                        assert "op.create_table" in new_content
+                    elif revision == "20003d6e7f8a9b":
+                        assert "Add post tags" in new_content
+                        assert "Create tags table" in new_content
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@
 
 This script allows you to rebase one migration branch onto another when
 working with diverged alembic heads in a git repository.
+
+The rebasing process follows the 4-phase approach described in SPEC.md:
+1. Analysis and Validation
+2. Downgrade to Common Ancestor
+3. History Rewriting
+4. Apply Linearized History
 """
 
 import argparse
@@ -11,7 +17,6 @@ import configparser
 import logging
 import re
 import sys
-import uuid
 from pathlib import Path
 
 from alembic import command
@@ -29,7 +34,14 @@ class AlembicRebaseError(Exception):
 
 
 class AlembicRebase:
-    """Main class for handling alembic migration rebasing."""
+    """Main class for handling alembic migration rebasing.
+
+    This class implements the 4-phase rebasing algorithm described in SPEC.md:
+    - Phase 1: Analysis and Validation (configuration, revision validation, chain analysis)
+    - Phase 2: Downgrade to Common Ancestor
+    - Phase 3: History Rewriting (file modification with integrity validation)
+    - Phase 4: Apply Linearized History
+    """
 
     def __init__(self, alembic_ini_path: str | None = None) -> None:
         self.alembic_ini_path = alembic_ini_path or "alembic.ini"
@@ -37,10 +49,14 @@ class AlembicRebase:
         self.script_dir: ScriptDirectory | None = None
         self.db_url: str | None = None
         self.script_location: str | None = None
-        self.revision_mapping: dict[str, str] = {}  # old_revision -> new_revision
 
     def _load_alembic_config(self) -> None:
-        """Load alembic configuration from alembic.ini file."""
+        """Load alembic configuration from alembic.ini file.
+
+        Part of Phase 1: Analysis and Validation.
+        Parses alembic.ini to extract script_location and sqlalchemy.url,
+        converts database URL to async format, and initializes alembic objects.
+        """
         if not Path(self.alembic_ini_path).exists():
             raise AlembicRebaseError(
                 f"Alembic config file not found: {self.alembic_ini_path}"
@@ -92,13 +108,18 @@ class AlembicRebase:
         await engine.dispose()
         return list(current_heads)
 
-    async def _validate_revisions(self, target_head: str, base_head: str) -> None:
-        """Validate that the provided revision IDs exist and are actually heads."""
+    async def _validate_revisions(self, top_head: str, base_head: str) -> None:
+        """Validate that the provided revision IDs exist and are actually heads.
+
+        Part of Phase 1: Analysis and Validation.
+        Ensures both top_head and base_head are solely current database heads
+        and that they are different revisions.
+        """
         current_heads = await self._get_current_heads()
 
-        if target_head not in current_heads:
+        if top_head not in current_heads:
             raise AlembicRebaseError(
-                f"Target head '{target_head}' is not a current head. Current heads: {current_heads}"
+                f"Top head '{top_head}' is not a current head. Current heads: {current_heads}"
             )
 
         if base_head not in current_heads:
@@ -106,11 +127,16 @@ class AlembicRebase:
                 f"Base head '{base_head}' is not a current head. Current heads: {current_heads}"
             )
 
-        if target_head == base_head:
-            raise AlembicRebaseError("Target head and base head cannot be the same")
+        if top_head == base_head:
+            raise AlembicRebaseError("Top head and base head cannot be the same")
 
     def _get_migration_chain(self, revision: str) -> list[str]:
-        """Get the chain of migrations leading to a specific revision."""
+        """Get the chain of migrations leading to a specific revision.
+
+        Part of Phase 1: Analysis and Validation.
+        Builds migration chains by following down_revision links from the given
+        revision back to the root, then returns the chain in chronological order.
+        """
         assert self.script_dir is not None, "Script directory not initialized"
         script = self.script_dir.get_revision(revision)
         chain = []
@@ -128,20 +154,21 @@ class AlembicRebase:
 
         return list(reversed(chain))
 
-    def _find_common_ancestor(self, target_head: str, base_head: str) -> str | None:
-        """Find the common ancestor of two migration heads."""
-        target_chain = set(self._get_migration_chain(target_head))
+    def _find_common_ancestor(self, top_head: str, base_head: str) -> str | None:
+        """Find the common ancestor of two migration heads.
+
+        Part of Phase 1: Analysis and Validation.
+        Identifies the last migration that both branches share by comparing
+        their migration chains.
+        """
+        top_chain = set(self._get_migration_chain(top_head))
         base_chain = self._get_migration_chain(base_head)
 
         for revision in base_chain:
-            if revision in target_chain:
+            if revision in top_chain:
                 return revision
 
         return None
-
-    def _generate_new_revision_id(self) -> str:
-        """Generate a new revision ID."""
-        return str(uuid.uuid4()).replace("-", "")[:12]
 
     def _find_migration_file(self, revision: str) -> Path | None:
         """Find the migration file for a given revision."""
@@ -229,56 +256,49 @@ class AlembicRebase:
                 flags=re.MULTILINE,
             )
 
-        # Update filename to reflect new revision
-        new_filename = file_path.name.replace(old_revision, new_revision)
-        new_path = file_path.parent / new_filename
+        # Write updated content back to the same file (revision ID unchanged)
+        file_path.write_text(content)
 
-        # Write updated content to new file
-        new_path.write_text(content)
-
-        # Remove old file if different
-        if new_path != file_path:
-            file_path.unlink()
-
-        logger.info(f"Updated migration file: {file_path} -> {new_path}")
+        logger.info(f"Updated migration file linkage: {file_path.name}")
 
     def _rewrite_migration_files(
-        self, migrations_to_rebase: list[str], target_head: str
+        self, migrations_to_rebase: list[str], last_top_migration: str
     ) -> None:
-        """Rewrite migration files with new revision IDs to reflect rebase."""
-        logger.info("Rewriting migration files for rebase...")
+        """Update migration files to reflect new parent relationships after rebase.
 
-        # Create new revision IDs for migrations to rebase
-        for migration in migrations_to_rebase:
-            new_revision = self._generate_new_revision_id()
-            self.revision_mapping[migration] = new_revision
-            logger.info(f"Mapping {migration} -> {new_revision}")
+        Part of Phase 3: History Rewriting.
+        Modifies migration files to reflect the new linearized revision history
+        by updating down_revision fields while preserving all other content.
+        """
+        logger.info("Updating migration file linkage for rebase...")
 
-        # Update migration files
-        for i, old_revision in enumerate(migrations_to_rebase):
-            file_path = self._find_migration_file(old_revision)
+        # Update migration files (keeping original revision IDs)
+        for i, revision in enumerate(migrations_to_rebase):
+            file_path = self._find_migration_file(revision)
             if not file_path:
                 raise AlembicRebaseError(
-                    f"Could not find migration file for revision {old_revision}"
+                    f"Could not find migration file for revision {revision}"
                 )
-
-            new_revision = self.revision_mapping[old_revision]
 
             # Determine new down_revision
             if i == 0:
-                # First migration in rebase should point to target_head
-                new_down_revision = target_head
+                # First migration in rebase should point to last_top_migration
+                new_down_revision = last_top_migration
             else:
-                # Subsequent migrations point to previous rebased migration
-                prev_old_revision = migrations_to_rebase[i - 1]
-                new_down_revision = self.revision_mapping[prev_old_revision]
+                # Subsequent migrations point to previous migration in the rebased chain
+                new_down_revision = migrations_to_rebase[i - 1]
 
+            # Update only the down_revision, keep original revision ID
             self._update_migration_file(
-                file_path, old_revision, new_revision, new_down_revision
+                file_path, revision, revision, new_down_revision
             )
 
     def _validate_migration_file_integrity(self, revision: str) -> bool:
-        """Validate that a migration file has proper structure and syntax."""
+        """Validate that a migration file has proper structure and syntax.
+
+        Part of Phase 3: History Rewriting - Integrity Validation.
+        Validates Python syntax and ensures all required alembic elements are present.
+        """
         file_path = self._find_migration_file(revision)
         if not file_path:
             return False
@@ -311,7 +331,12 @@ class AlembicRebase:
             return False
 
     def _validate_migration_chain_integrity(self, migrations: list[str]) -> bool:
-        """Validate that the migration chain has proper linkage."""
+        """Validate that the migration chain has proper linkage.
+
+        Part of Phase 3: History Rewriting - Integrity Validation.
+        Verifies migration chain linkage is correct and there is only a single
+        head revision in the history.
+        """
         for i, revision in enumerate(migrations):
             file_path = self._find_migration_file(revision)
             if not file_path:
@@ -334,7 +359,12 @@ class AlembicRebase:
         return True
 
     async def _downgrade_to_revision(self, revision: str) -> None:
-        """Downgrade database to a specific revision."""
+        """Downgrade database to a specific revision.
+
+        Part of Phase 2: Downgrade to Common Ancestor.
+        Uses alembic to downgrade database to the common ancestor revision,
+        removing all migrations from both diverged branches.
+        """
         logger.info(f"Downgrading to revision: {revision}")
 
         # Use sync engine for alembic commands
@@ -346,7 +376,11 @@ class AlembicRebase:
         command.downgrade(self.config, revision)
 
     async def _upgrade_to_head(self, head: str) -> None:
-        """Upgrade database to a specific head."""
+        """Upgrade database to a specific head.
+
+        Part of Phase 4: Apply Linearized History.
+        Runs the regular alembic upgrade procedure using the new history chain.
+        """
         logger.info(f"Upgrading to head: {head}")
 
         # Use sync engine for alembic commands
@@ -357,26 +391,33 @@ class AlembicRebase:
 
         command.upgrade(self.config, head)
 
-    async def rebase(self, target_head: str, base_head: str) -> None:
-        """Rebase migrations by putting base_head below target_head in history.
+    async def rebase(self, base_head: str, top_head: str) -> None:
+        """Rebase migrations by putting base_head below top_head in history.
+
+        The rebasing process consists of four main phases:
+        1. Analysis and Validation
+        2. Downgrade to Common Ancestor
+        3. History Rewriting
+        4. Apply Linearized History
 
         Args:
-            target_head: The revision that will remain at the top
-            base_head: The revision that will be moved below target_head
+            base_head: The revision that will be moved below top_head
+            top_head: The revision that will remain at the top
 
         """
-        logger.info(
-            f"Starting rebase: target_head={target_head}, base_head={base_head}"
-        )
+        logger.info(f"Starting rebase: base_head={base_head}, top_head={top_head}")
 
-        # Load configuration
+        # === Phase 1: Analysis and Validation ===
+        logger.info("Phase 1: Analysis and Validation")
+
+        # Configuration Loading
         self._load_alembic_config()
 
-        # Validate revisions
-        await self._validate_revisions(target_head, base_head)
+        # Revision Validation
+        await self._validate_revisions(top_head, base_head)
 
-        # Find common ancestor
-        common_ancestor = self._find_common_ancestor(target_head, base_head)
+        # Chain Analysis
+        common_ancestor = self._find_common_ancestor(top_head, base_head)
         if not common_ancestor:
             raise AlembicRebaseError("No common ancestor found between the two heads")
 
@@ -384,9 +425,9 @@ class AlembicRebase:
 
         # Get the migrations to rebase (from base_head back to common ancestor)
         base_chain = self._get_migration_chain(base_head)
-        self._get_migration_chain(target_head)
+        top_chain = self._get_migration_chain(top_head)
 
-        # Find where the base chain diverged from target
+        # Find where the base chain diverged from top
         common_index = None
         for i, rev in enumerate(base_chain):
             if rev == common_ancestor:
@@ -399,35 +440,50 @@ class AlembicRebase:
         migrations_to_rebase = base_chain[common_index + 1 :]
         logger.info(f"Migrations to rebase: {migrations_to_rebase}")
 
-        # Step 1: Rewrite migration files with new revision IDs
-        self._rewrite_migration_files(migrations_to_rebase, target_head)
+        # === Phase 2: Downgrade to Common Ancestor ===
+        logger.info("Phase 2: Downgrade to Common Ancestor")
+        await self._downgrade_to_revision(common_ancestor)
 
-        # Step 1.5: Validate migration file integrity after rewrite
+        # === Phase 3: History Rewriting ===
+        logger.info("Phase 3: History Rewriting")
+
+        # Find the rebasing point
+        # Get the revision ID of the last migration in the top_head chain after the common ancestor
+        top_chain_after_ancestor = [rev for rev in top_chain if rev != common_ancestor]
+        if not top_chain_after_ancestor:
+            raise AlembicRebaseError(
+                "No migrations found in top chain after common ancestor"
+            )
+
+        # Get the last migration in the top chain after the common ancestor
+        last_top_migration = top_chain_after_ancestor[-1]
+
+        # File Rewriting - update migration file linkage for rebase
+        self._rewrite_migration_files(migrations_to_rebase, last_top_migration)
+
+        # Integrity Validation
         logger.info("Validating migration file integrity after rebase...")
-        for old_revision in migrations_to_rebase:
-            new_revision = self.revision_mapping[old_revision]
-            if not self._validate_migration_file_integrity(new_revision):
+        for revision in migrations_to_rebase:
+            if not self._validate_migration_file_integrity(revision):
                 raise AlembicRebaseError(
-                    f"Migration file integrity validation failed for {new_revision}"
+                    f"Migration file integrity validation failed for {revision}"
                 )
 
-        # Validate migration chain integrity
-        rebased_revisions = [self.revision_mapping[rev] for rev in migrations_to_rebase]
-        if not self._validate_migration_chain_integrity(rebased_revisions):
+        # Validate migration chain integrity (with updated linkage)
+        if not self._validate_migration_chain_integrity(migrations_to_rebase):
             raise AlembicRebaseError("Migration chain integrity validation failed")
 
         logger.info("Migration file integrity validation passed")
 
-        # Step 2: Downgrade to common ancestor
-        await self._downgrade_to_revision(common_ancestor)
+        # === Phase 4: Apply Linearized History ===
+        logger.info("Phase 4: Apply Linearized History")
 
-        # Step 3: Upgrade to target head
-        await self._upgrade_to_head(target_head)
+        # Apply rebased migrations - first upgrade to top_head, then apply rebased migrations
+        await self._upgrade_to_head(top_head)
 
-        # Step 4: Apply rebased migrations using new revision IDs
-        for old_revision in migrations_to_rebase:
-            new_revision = self.revision_mapping[old_revision]
-            await self._upgrade_to_head(new_revision)
+        # Apply rebased migrations using original revision IDs
+        for revision in migrations_to_rebase:
+            await self._upgrade_to_head(revision)
 
         logger.info("Rebase completed successfully!")
 
@@ -439,17 +495,17 @@ async def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s abc123 def456
-  %(prog)s --alembic-ini ./configs/alembic.ini abc123 def456
+  %(prog)s 1000a1b2c3d4e5 2000f6e7d8c9ba
+  %(prog)s --alembic-ini ./configs/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
         """,
     )
 
     parser.add_argument(
-        "target_head", help="The revision ID that will remain at the top of the history"
+        "base_head", help="The revision ID that will be moved below the top head"
     )
 
     parser.add_argument(
-        "base_head", help="The revision ID that will be moved below the target head"
+        "top_head", help="The revision ID that will remain at the top of the history"
     )
 
     parser.add_argument(
@@ -469,7 +525,7 @@ Examples:
 
     try:
         rebase = AlembicRebase(args.alembic_ini)
-        await rebase.rebase(args.target_head, args.base_head)
+        await rebase.rebase(args.base_head, args.top_head)
     except AlembicRebaseError as e:
         logger.error(f"Rebase failed: {e}")
         sys.exit(1)
