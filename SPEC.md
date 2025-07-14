@@ -244,6 +244,7 @@ The tool respects standard alembic environment variable overrides:
 - pytest-asyncio (async testing)
 - ruff (formatting and linting)
 - mypy (type checking)
+- pre-commit (git hooks for code quality)
 - uv (dependency management)
 
 This specification provides a complete understanding of the rebasing logic and can serve as a reference for future development, debugging, or enhancement of the tool.

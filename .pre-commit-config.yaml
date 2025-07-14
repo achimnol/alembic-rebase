@@ -1,0 +1,38 @@
+# Pre-commit configuration for alembic-rebase
+# See https://pre-commit.com for more information
+repos:
+  # Ruff for formatting and linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.3
+    hooks:
+      # Format code
+      - id: ruff-format
+        types_or: [python, pyi, jupyter]
+      # Lint code
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi, jupyter]
+
+  # MyPy for type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.16.1
+    hooks:
+      - id: mypy
+        files: ^alembic_rebase\.py$
+        additional_dependencies:
+          - types-setuptools
+          - sqlalchemy-stubs
+        args: [--config-file=mypy.ini]
+
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]

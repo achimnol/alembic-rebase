@@ -23,7 +23,7 @@ base001 -> branch_b1 -> branch_b2
 """Create users table
 
 Revision ID: base001
-Revises: 
+Revises:
 Create Date: 2024-01-01 10:00:00.000000
 """
 from alembic import op
@@ -139,7 +139,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'xyz789abc123'      # <- NEW: Generated revision ID  
+revision = 'xyz789abc123'      # <- NEW: Generated revision ID
 down_revision = 'abc123def456' # <- UPDATED: Points to previous rebased migration
 branch_labels = None
 depends_on = None

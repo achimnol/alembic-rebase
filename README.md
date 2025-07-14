@@ -7,7 +7,7 @@ A standalone Python script to rebase alembic migrations when heads are diverged 
 - **Async operations** using asyncio and asyncpg
 - **Compatible** with SQLAlchemy 1.4 and Alembic
 - **Migration file rewriting** - automatically updates revision IDs and file links
-- **Supports custom alembic.ini locations** for monorepo setups  
+- **Supports custom alembic.ini locations** for monorepo setups
 - **Migration integrity validation** - ensures files are valid after rebase
 - **Comprehensive error handling** and validation
 - **Full test suite** with real migration files and proper cleanup
@@ -66,7 +66,7 @@ The script performs the following steps:
 
 3. **Analysis**: Finds the common ancestor between the two diverged branches
 
-4. **File Rewriting**: 
+4. **File Rewriting**:
    - Generates new revision IDs for migrations to be rebased
    - Updates migration files with new revision IDs and proper linkage
    - Preserves all migration content (upgrade/downgrade functions)
@@ -156,6 +156,12 @@ uv run ruff check --fix .
 
 # Run type checking
 uv run mypy alembic_rebase.py
+
+# Install pre-commit hooks (runs ruff and mypy automatically on commit)
+uv run pre-commit install
+
+# Run pre-commit hooks manually on all files
+uv run pre-commit run --all-files
 
 # Run the script
 uv run python alembic_rebase.py --help

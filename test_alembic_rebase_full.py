@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Comprehensive test suite for alembic rebase script with actual migration files.
-"""
+"""Comprehensive test suite for alembic rebase script with actual migration files."""
 
 import asyncio
 import os

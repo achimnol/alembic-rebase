@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Simplified test suite for alembic rebase script without Docker dependencies.
-"""
+"""Simplified test suite for alembic rebase script without Docker dependencies."""
 
 import shutil
 import tempfile
