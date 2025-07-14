@@ -1,0 +1,78 @@
+# Enable preview mode for the latest features
+preview = true
+
+# Target Python 3.12+
+target-version = "py312"
+
+# Line length
+line-length = 88
+
+[lint]
+# Enable commonly used rules
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "PIE",   # flake8-pie
+    "SIM",   # flake8-simplify
+    "RUF",   # Ruff-specific rules
+]
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function calls in argument defaults
+    "UP038",  # Use `X | Y` in `isinstance` call instead of `(X, Y)` (conflicts with old Python)
+]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Use spaces for indentation
+indent-style = "space"
+
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+
+# Auto-detect line ending
+line-ending = "auto"
+
+# Enable preview mode for formatter
+preview = true
+
+[lint.isort]
+# Import sorting configuration
+combine-as-imports = true
+force-wrap-aliases = true
+split-on-trailing-comma = true
+
+# Known first party modules
+known-first-party = ["alembic_rebase"]
+
+[lint.pyupgrade]
+# Keep runtime typing for Python 3.12+
+keep-runtime-typing = true
+
+[lint.pylint]
+# Allow more complexity for migration tools
+max-args = 10
+max-branches = 15
+max-returns = 8
+max-statements = 60
+
+[lint.per-file-ignores]
+# Test files can have more relaxed rules
+"test_*.py" = [
+    "ANN001",  # Missing type annotations
+    "ANN201",  # Missing return type annotation
+    "S105",    # Hardcoded passwords in tests
+    "S106",    # Hardcoded passwords in tests
+    "PLR0915", # Too many statements
+]
+
+# Example file can have print statements
+"EXAMPLE.md" = ["ALL"]

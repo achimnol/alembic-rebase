@@ -1,0 +1,20 @@
+[project]
+name = "alembic-rebase"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.16.4",
+    "asyncpg>=0.30.0",
+    "docker>=7.1.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
+    "sqlalchemy>=1.4,<2.0",
+    "testcontainers[postgresql]>=4.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.3",
+]

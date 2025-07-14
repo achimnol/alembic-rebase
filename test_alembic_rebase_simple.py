@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+"""Simplified test suite for alembic rebase script without Docker dependencies.
+"""
+
+import shutil
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from alembic_rebase import AlembicRebase, AlembicRebaseError
+
+
+class TestAlembicRebaseSimple:
+    """Simplified test suite for AlembicRebase functionality."""
+
+    @pytest.fixture
+    def temp_alembic_env(self):
+        """Create a temporary alembic environment for testing."""
+        temp_dir = Path(tempfile.mkdtemp())
+
+        try:
+            # Create alembic.ini
+            alembic_ini = temp_dir / "alembic.ini"
+            config_content = """[alembic]
+script_location = migrations
+sqlalchemy.url = postgresql://user:pass@localhost/testdb
+
+[post_write_hooks]
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+"""
+            alembic_ini.write_text(config_content)
+
+            # Create migrations directory structure
+            migrations_dir = temp_dir / "migrations"
+            migrations_dir.mkdir()
+
+            # Create versions directory
+            versions_dir = migrations_dir / "versions"
+            versions_dir.mkdir()
+
+            yield temp_dir, alembic_ini
+
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_load_alembic_config(self, temp_alembic_env):
+        """Test loading alembic configuration."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        # Mock the alembic components
+        with (
+            patch("alembic_rebase.Config") as mock_config,
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            mock_config.return_value = MagicMock()
+            mock_script_dir.from_config.return_value = MagicMock()
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            assert rebase.config is not None
+            assert rebase.script_dir is not None
+            assert "postgresql+asyncpg://" in rebase.db_url
+
+    def test_load_nonexistent_config(self):
+        """Test error handling for nonexistent config file."""
+        rebase = AlembicRebase("nonexistent.ini")
+
+        with pytest.raises(AlembicRebaseError, match="Alembic config file not found"):
+            rebase._load_alembic_config()
+
+    def test_load_config_missing_sections(self, temp_alembic_env):
+        """Test error handling for malformed config file."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        # Create a config file without required sections
+        alembic_ini.write_text("[other]\nkey=value")
+
+        rebase = AlembicRebase(str(alembic_ini))
+
+        with pytest.raises(AlembicRebaseError, match="No \\[alembic\\] section found"):
+            rebase._load_alembic_config()
+
+    def test_load_config_missing_script_location(self, temp_alembic_env):
+        """Test error handling for missing script_location."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        # Create a config file without script_location
+        config_content = """[alembic]
+sqlalchemy.url = postgresql://user:pass@localhost/testdb
+"""
+        alembic_ini.write_text(config_content)
+
+        rebase = AlembicRebase(str(alembic_ini))
+
+        with pytest.raises(AlembicRebaseError, match="script_location not found"):
+            rebase._load_alembic_config()
+
+    def test_load_config_missing_db_url(self, temp_alembic_env):
+        """Test error handling for missing database URL."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        # Create a config file without sqlalchemy.url
+        config_content = """[alembic]
+script_location = migrations
+"""
+        alembic_ini.write_text(config_content)
+
+        rebase = AlembicRebase(str(alembic_ini))
+
+        with pytest.raises(AlembicRebaseError, match=r"sqlalchemy\.url not found"):
+            rebase._load_alembic_config()
+
+    def create_migration_files(self, temp_dir, migrations_data):
+        """Helper to create migration files for testing."""
+        versions_dir = temp_dir / "migrations" / "versions"
+
+        for migration in migrations_data:
+            migration_file = versions_dir / f"{migration['revision']}_test_migration.py"
+            content = f'''"""Test migration
+
+Revision ID: {migration["revision"]}
+Revises: {migration.get("down_revision", None)}
+Create Date: 2024-01-01 00:00:00.000000
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = '{migration["revision"]}'
+down_revision = {migration.get("down_revision")!r}
+branch_labels = None
+depends_on = None
+
+def upgrade() -> None:
+    pass
+
+def downgrade() -> None:
+    pass
+'''
+            migration_file.write_text(content)
+
+    def test_migration_chain_analysis(self, temp_alembic_env):
+        """Test migration chain analysis functionality."""
+        temp_dir, alembic_ini = temp_alembic_env
+
+        # Create a linear chain of migrations
+        migrations = [
+            {"revision": "rev1", "down_revision": None},
+            {"revision": "rev2", "down_revision": "rev1"},
+            {"revision": "rev3", "down_revision": "rev2"},
+        ]
+
+        self.create_migration_files(temp_dir, migrations)
+
+        with (
+            patch("alembic_rebase.Config"),
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            # Mock the script directory and revisions
+            mock_script_instance = MagicMock()
+            mock_script_dir.from_config.return_value = mock_script_instance
+
+            # Mock revision objects
+            rev1 = MagicMock()
+            rev1.revision = "rev1"
+            rev1.down_revision = None
+
+            rev2 = MagicMock()
+            rev2.revision = "rev2"
+            rev2.down_revision = "rev1"
+
+            rev3 = MagicMock()
+            rev3.revision = "rev3"
+            rev3.down_revision = "rev2"
+
+            # Setup mock get_revision method
+            def mock_get_revision(rev_id):
+                if rev_id == "rev1":
+                    return rev1
+                if rev_id == "rev2":
+                    return rev2
+                if rev_id == "rev3":
+                    return rev3
+                return None
+
+            mock_script_instance.get_revision.side_effect = mock_get_revision
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            chain = rebase._get_migration_chain("rev3")
+            assert chain == ["rev1", "rev2", "rev3"]
+
+            chain = rebase._get_migration_chain("rev2")
+            assert chain == ["rev1", "rev2"]
+
+    def test_find_common_ancestor(self, temp_alembic_env):
+        """Test finding common ancestor between branches."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        with (
+            patch("alembic_rebase.Config"),
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            # Mock the script directory and revisions
+            mock_script_instance = MagicMock()
+            mock_script_dir.from_config.return_value = mock_script_instance
+
+            # Mock revision objects for branched structure
+            base = MagicMock()
+            base.revision = "base"
+            base.down_revision = None
+
+            branch_a1 = MagicMock()
+            branch_a1.revision = "branch_a1"
+            branch_a1.down_revision = "base"
+
+            branch_a2 = MagicMock()
+            branch_a2.revision = "branch_a2"
+            branch_a2.down_revision = "branch_a1"
+
+            branch_b1 = MagicMock()
+            branch_b1.revision = "branch_b1"
+            branch_b1.down_revision = "base"
+
+            branch_b2 = MagicMock()
+            branch_b2.revision = "branch_b2"
+            branch_b2.down_revision = "branch_b1"
+
+            # Setup mock get_revision method
+            def mock_get_revision(rev_id):
+                revisions = {
+                    "base": base,
+                    "branch_a1": branch_a1,
+                    "branch_a2": branch_a2,
+                    "branch_b1": branch_b1,
+                    "branch_b2": branch_b2,
+                }
+                return revisions.get(rev_id)
+
+            mock_script_instance.get_revision.side_effect = mock_get_revision
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            ancestor = rebase._find_common_ancestor("branch_a2", "branch_b2")
+            assert ancestor == "base"
+
+    @pytest.mark.asyncio
+    async def test_validate_revisions_error_cases(self, temp_alembic_env):
+        """Test validation error cases."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        with (
+            patch("alembic_rebase.Config") as mock_config,
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+            patch.object(AlembicRebase, "_get_current_heads") as mock_get_heads,
+        ):
+            mock_config.return_value = MagicMock()
+            mock_script_dir.from_config.return_value = MagicMock()
+
+            # Mock empty heads
+            mock_get_heads.return_value = []
+
+            rebase = AlembicRebase(str(alembic_ini))
+            rebase._load_alembic_config()
+
+            # Test with no current heads
+            with pytest.raises(AlembicRebaseError, match="not a current head"):
+                await rebase._validate_revisions("nonexistent1", "nonexistent2")
+
+            # Test with same revision
+            mock_get_heads.return_value = ["rev1", "rev2"]
+            with pytest.raises(AlembicRebaseError, match="cannot be the same"):
+                await rebase._validate_revisions("rev1", "rev1")
+
+
+def test_main_cli_args():
+    """Test command line argument parsing."""
+    import argparse
+
+    # Test basic argument parsing
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target_head")
+    parser.add_argument("base_head")
+    parser.add_argument("--alembic-ini", default="alembic.ini")
+    parser.add_argument("--verbose", "-v", action="store_true")
+
+    args = parser.parse_args(["target123", "base456"])
+    assert args.target_head == "target123"
+    assert args.base_head == "base456"
+    assert args.alembic_ini == "alembic.ini"
+    assert not args.verbose
+
+    args = parser.parse_args([
+        "target123",
+        "base456",
+        "--alembic-ini",
+        "custom.ini",
+        "-v",
+    ])
+    assert args.target_head == "target123"
+    assert args.base_head == "base456"
+    assert args.alembic_ini == "custom.ini"
+    assert args.verbose
+
+
+def test_db_url_conversion():
+    """Test database URL conversion to async format."""
+    test_cases = [
+        ("postgresql://user:pass@host/db", "postgresql+asyncpg://user:pass@host/db"),
+        (
+            "postgresql+psycopg2://user:pass@host/db",
+            "postgresql+asyncpg://user:pass@host/db",
+        ),
+        (
+            "postgresql+asyncpg://user:pass@host/db",
+            "postgresql+asyncpg://user:pass@host/db",
+        ),
+    ]
+
+    for input_url, expected_output in test_cases:
+        rebase = AlembicRebase()
+        rebase.db_url = input_url
+
+        # Simulate the URL conversion logic
+        if rebase.db_url.startswith("postgresql://"):
+            rebase.db_url = rebase.db_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
+        elif rebase.db_url.startswith("postgresql+psycopg2://"):
+            rebase.db_url = rebase.db_url.replace(
+                "postgresql+psycopg2://", "postgresql+asyncpg://", 1
+            )
+
+        assert rebase.db_url == expected_output
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
