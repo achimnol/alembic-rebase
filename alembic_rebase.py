@@ -23,6 +23,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +48,7 @@ class AlembicRebase:
         self.alembic_ini_path = alembic_ini_path or "alembic.ini"
         self.config: Config | None = None
         self.script_dir: ScriptDirectory | None = None
-        self.db_url: str | None = None
+        self.db_url: str = ""
         self.script_location: str | None = None
 
     def _load_alembic_config(self) -> None:
@@ -77,19 +78,19 @@ class AlembicRebase:
             raise AlembicRebaseError("script_location not found in alembic config")
 
         # Get database URL
-        self.db_url = config_parser.get("alembic", "sqlalchemy.url", fallback=None)
-        if not self.db_url:
+        db_url = config_parser.get("alembic", "sqlalchemy.url", fallback=None)
+        if not db_url:
             raise AlembicRebaseError("sqlalchemy.url not found in alembic config")
 
         # Convert sync postgres URL to async if needed
-        if self.db_url.startswith("postgresql://"):
-            self.db_url = self.db_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
-        elif self.db_url.startswith("postgresql+psycopg2://"):
-            self.db_url = self.db_url.replace(
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif db_url.startswith("postgresql+psycopg2://"):
+            db_url = db_url.replace(
                 "postgresql+psycopg2://", "postgresql+asyncpg://", 1
             )
+
+        self.db_url = db_url
 
         # Initialize alembic config
         self.config = Config(self.alembic_ini_path)
@@ -102,9 +103,13 @@ class AlembicRebase:
     async def _get_current_heads(self) -> list[str]:
         """Get current heads from the database."""
         engine = create_async_engine(self.db_url)
+
+        def get_heads_sync(connection: Connection) -> tuple[str, ...]:
+            context: MigrationContext = MigrationContext.configure(connection)
+            return context.get_current_heads()
+
         async with engine.begin() as conn:
-            context = MigrationContext.configure(conn)
-            current_heads = context.get_current_heads()
+            current_heads = await conn.run_sync(get_heads_sync)
         await engine.dispose()
         return list(current_heads)
 

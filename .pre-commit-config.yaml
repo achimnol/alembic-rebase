@@ -19,9 +19,8 @@ repos:
     hooks:
       - id: mypy
         files: ^alembic_rebase\.py$
-        additional_dependencies:
-          - types-setuptools
-          - sqlalchemy-stubs
+        entry: uv run mypy
+        language: system
         args: [--config-file=mypy.ini]
 
   # Standard pre-commit hooks
