@@ -39,6 +39,7 @@ python alembic_rebase.py [options] <base_head> <top_head>
 
 - `-f, --config PATH`: Path to alembic.ini file (default: alembic.ini)
 - `--verbose, -v`: Enable verbose logging
+- `--show-heads`: Show current migration file heads and exit
 - `--help, -h`: Show help message
 
 ### Examples
@@ -54,6 +55,9 @@ python alembic_rebase.py --config ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f
 
 # Verbose output
 python alembic_rebase.py -v 1000a1b2c3d4e5 2000f6e7d8c9ba
+
+# Show current migration file heads
+python alembic_rebase.py --show-heads
 ```
 
 ## How It Works

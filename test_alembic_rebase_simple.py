@@ -281,33 +281,42 @@ def downgrade() -> None:
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
             assert ancestor == "00004a7b9c2e1f"
 
-    @pytest.mark.asyncio
-    async def test_validate_revisions_error_cases(self, temp_alembic_env):
+    def test_validate_revisions_error_cases(self, temp_alembic_env):
         """Test validation error cases."""
         _temp_dir, alembic_ini = temp_alembic_env
 
         with (
             patch("alembic_rebase.Config") as mock_config,
             patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
-            patch.object(AlembicRebase, "_get_current_heads") as mock_get_heads,
+            patch.object(
+                AlembicRebase, "_get_current_heads_from_files"
+            ) as mock_get_heads,
+            patch.object(AlembicRebase, "_find_migration_file") as mock_find_file,
         ):
             mock_config.return_value = MagicMock()
             mock_script_dir.from_config.return_value = MagicMock()
 
-            # Mock empty heads
-            mock_get_heads.return_value = []
-
             rebase = AlembicRebase(str(alembic_ini))
             rebase._load_alembic_config()
 
-            # Test with no current heads
-            with pytest.raises(AlembicRebaseError, match="not a current head"):
-                await rebase._validate_revisions("nonexistent1", "nonexistent2")
-
             # Test with same revision
-            mock_get_heads.return_value = ["1000a1b2c3d4e5", "2000f6e7d8c9ba"]
+            mock_get_heads.return_value = ["1000a1b2c3d4e5"]
+            mock_find_file.return_value = MagicMock()  # Mock file exists
             with pytest.raises(AlembicRebaseError, match="cannot be the same"):
-                await rebase._validate_revisions("1000a1b2c3d4e5", "1000a1b2c3d4e5")
+                rebase._validate_revisions("1000a1b2c3d4e5", "1000a1b2c3d4e5")
+
+            # Test with nonexistent migration file
+            mock_find_file.return_value = None  # Mock file doesn't exist
+            with pytest.raises(
+                AlembicRebaseError, match="does not exist in migration files"
+            ):
+                rebase._validate_revisions("nonexistent1", "nonexistent2")
+
+            # Test with no current heads
+            mock_get_heads.return_value = []
+            mock_find_file.return_value = MagicMock()  # Mock file exists
+            with pytest.raises(AlembicRebaseError, match="No current heads found"):
+                rebase._validate_revisions("revision1", "revision2")
 
 
 def test_main_cli_args():
@@ -320,6 +329,7 @@ def test_main_cli_args():
     parser.add_argument("top_head")
     parser.add_argument("-f", "--config", default="alembic.ini")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--show-heads", action="store_true")
 
     args = parser.parse_args(["1000a1b2c3d4e5", "2000f6e7d8c9ba"])
     assert args.base_head == "1000a1b2c3d4e5"

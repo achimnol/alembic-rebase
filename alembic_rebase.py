@@ -21,10 +21,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,40 +97,103 @@ class AlembicRebase:
         logger.info(f"Script location: {self.script_location}")
         logger.info(f"Database URL: {self.db_url.split('@')[0]}@***")
 
-    async def _get_current_heads(self) -> list[str]:
-        """Get current heads from the database."""
-        engine = create_async_engine(self.db_url)
+    def _get_current_heads_from_files(self) -> list[str]:
+        """Get current heads from migration files using alembic API.
 
-        def get_heads_sync(connection: Connection) -> tuple[str, ...]:
-            context: MigrationContext = MigrationContext.configure(connection)
-            return context.get_current_heads()
+        Uses alembic's ScriptDirectory to properly resolve package paths
+        and get heads from migration files.
+        """
+        assert self.script_dir is not None, "Script directory not initialized"
 
-        async with engine.begin() as conn:
-            current_heads = await conn.run_sync(get_heads_sync)
-        await engine.dispose()
-        return list(current_heads)
+        try:
+            # Use alembic's built-in method to get heads
+            heads = self.script_dir.get_heads()
+            logger.info(f"Found {len(heads)} heads in migration files: {heads}")
 
-    async def _validate_revisions(self, top_head: str, base_head: str) -> None:
-        """Validate that the provided revision IDs exist and are actually heads.
+            # Debug information
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Script directory: {self.script_dir.dir}")
+                logger.debug(f"Version locations: {self.script_dir.version_locations}")
+
+                # Count total revisions
+                all_revisions = list(self.script_dir.walk_revisions())
+                logger.debug(f"Total revisions found: {len(all_revisions)}")
+
+                if all_revisions:
+                    revision_ids = [rev.revision for rev in all_revisions]
+                    logger.debug(f"All revision IDs: {sorted(revision_ids)}")
+
+            return heads
+
+        except Exception as e:
+            logger.error(f"Error getting heads from migration files: {e}")
+            logger.debug(f"Script directory path: {self.script_dir.dir}")
+            return []
+
+    def _validate_revisions(self, top_head: str, base_head: str) -> None:
+        """Validate that the provided revision IDs exist and are valid for rebasing.
 
         Part of Phase 1: Analysis and Validation.
-        Ensures both top_head and base_head are solely current database heads
-        and that they are different revisions.
+        Validates that both revisions exist in migration files and checks their
+        relationship to current database heads.
         """
-        current_heads = await self._get_current_heads()
+        current_heads = self._get_current_heads_from_files()
 
-        if top_head not in current_heads:
-            raise AlembicRebaseError(
-                f"Top head '{top_head}' is not a current head. Current heads: {current_heads}"
-            )
-
-        if base_head not in current_heads:
-            raise AlembicRebaseError(
-                f"Base head '{base_head}' is not a current head. Current heads: {current_heads}"
-            )
-
+        # Check if revisions are the same
         if top_head == base_head:
             raise AlembicRebaseError("Top head and base head cannot be the same")
+
+        # Check if revisions exist in migration files
+        if not self._find_migration_file(top_head):
+            raise AlembicRebaseError(
+                f"Top head '{top_head}' does not exist in migration files. "
+                f"Current migration file heads: {current_heads}"
+            )
+
+        if not self._find_migration_file(base_head):
+            raise AlembicRebaseError(
+                f"Base head '{base_head}' does not exist in migration files. "
+                f"Current migration file heads: {current_heads}"
+            )
+
+        # For a rebase to make sense, we need to check the relationship between revisions
+        # and current heads. The tool is designed to work with diverged migration histories.
+
+        # Check if we have any current heads at all
+        if not current_heads:
+            raise AlembicRebaseError(
+                "No current heads found in migration files. Please check your migration files."
+            )
+
+        # More flexible validation: At least one of the revisions should be reachable
+        # from current heads or be a current head itself
+        top_chain = set(self._get_migration_chain(top_head))
+        base_chain = set(self._get_migration_chain(base_head))
+        current_head_chains = set()
+
+        for head in current_heads:
+            current_head_chains.update(self._get_migration_chain(head))
+
+        # Check if both revisions are reachable from current database state
+        top_reachable = top_head in current_head_chains or any(
+            head in top_chain for head in current_heads
+        )
+        base_reachable = base_head in current_head_chains or any(
+            head in base_chain for head in current_heads
+        )
+
+        if not top_reachable and not base_reachable:
+            raise AlembicRebaseError(
+                f"Neither revision is reachable from current database state.\n"
+                f"Top head '{top_head}' and base head '{base_head}' are not in the history of current file heads: {current_heads}\n"
+                f"This usually means the provided revisions are not current heads in the migration files.\n"
+                f"Please check your migration files and ensure the revisions are valid heads."
+            )
+
+        logger.info(f"Validation passed. Current migration file heads: {current_heads}")
+        logger.info(
+            f"Top head reachable: {top_reachable}, Base head reachable: {base_reachable}"
+        )
 
     def _get_migration_chain(self, revision: str) -> list[str]:
         """Get the chain of migrations leading to a specific revision.
@@ -176,34 +236,21 @@ class AlembicRebase:
         return None
 
     def _find_migration_file(self, revision: str) -> Path | None:
-        """Find the migration file for a given revision."""
-        # Resolve script location relative to alembic.ini directory
-        assert self.script_location is not None, "Script location not initialized"
-        ini_dir = Path(self.alembic_ini_path).parent
-        script_location = ini_dir / self.script_location
-        versions_dir = script_location / "versions"
+        """Find the migration file for a given revision using alembic API."""
+        assert self.script_dir is not None, "Script directory not initialized"
 
-        if not versions_dir.exists():
-            logger.debug(f"Versions directory does not exist: {versions_dir}")
+        try:
+            # Use alembic's built-in method to get the revision
+            revision_obj = self.script_dir.get_revision(revision)
+            if revision_obj and revision_obj.path:
+                return Path(revision_obj.path)
+
+            logger.debug(f"Revision {revision} not found in script directory")
             return None
 
-        # First try to find by revision in filename
-        for file_path in versions_dir.glob("*.py"):
-            if revision in file_path.name:
-                return file_path
-
-        # If not found by filename, search within file content for exact revision match
-        for file_path in versions_dir.glob("*.py"):
-            try:
-                content = file_path.read_text()
-                # Use regex to match exact revision assignment
-                revision_pattern = rf"^revision\s*=\s*['\"]({re.escape(revision)})['\"]"
-                if re.search(revision_pattern, content, re.MULTILINE):
-                    return file_path
-            except Exception:
-                continue
-
-        return None
+        except Exception as e:
+            logger.debug(f"Error finding migration file for {revision}: {e}")
+            return None
 
     def _parse_migration_file(self, file_path: Path) -> tuple[str, str | None, str]:
         """Parse migration file to extract revision, down_revision, and content."""
@@ -419,7 +466,7 @@ class AlembicRebase:
         self._load_alembic_config()
 
         # Revision Validation
-        await self._validate_revisions(top_head, base_head)
+        self._validate_revisions(top_head, base_head)
 
         # Chain Analysis
         common_ancestor = self._find_common_ancestor(top_head, base_head)
@@ -507,11 +554,15 @@ Examples:
     )
 
     parser.add_argument(
-        "base_head", help="The revision ID that will be moved below the top head"
+        "base_head",
+        nargs="?",
+        help="The revision ID that will be moved below the top head",
     )
 
     parser.add_argument(
-        "top_head", help="The revision ID that will remain at the top of the history"
+        "top_head",
+        nargs="?",
+        help="The revision ID that will remain at the top of the history",
     )
 
     parser.add_argument(
@@ -525,6 +576,12 @@ Examples:
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
+    parser.add_argument(
+        "--show-heads",
+        action="store_true",
+        help="Show current migration file heads and exit",
+    )
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -532,6 +589,20 @@ Examples:
 
     try:
         rebase = AlembicRebase(args.config)
+
+        # Handle --show-heads option
+        if args.show_heads:
+            rebase._load_alembic_config()
+            current_heads = rebase._get_current_heads_from_files()
+            print(f"Current migration file heads: {current_heads}")
+            return
+
+        # Validate required arguments for rebase
+        if not args.base_head or not args.top_head:
+            parser.error(
+                "base_head and top_head are required unless using --show-heads"
+            )
+
         await rebase.rebase(args.base_head, args.top_head)
     except AlembicRebaseError as e:
         logger.error(f"Rebase failed: {e}")

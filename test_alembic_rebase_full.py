@@ -458,7 +458,7 @@ def downgrade() -> None:
         assert revision_parsed == "1000f3e4d5c6b7"  # Revision ID unchanged
         assert down_parsed == new_down_revision  # down_revision updated
 
-    @patch.object(AlembicRebase, "_get_current_heads")
+    @patch.object(AlembicRebase, "_get_current_heads_from_files")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
     @patch.object(AlembicRebase, "_upgrade_to_head")
     def test_rewrite_migration_files(
@@ -511,7 +511,7 @@ def downgrade() -> None:
         _, down_rev_b2, _ = rebase._parse_migration_file(b2_file)
         assert down_rev_b2 == b1_revision
 
-    @patch.object(AlembicRebase, "_get_current_heads")
+    @patch.object(AlembicRebase, "_get_current_heads_from_files")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
     @patch.object(AlembicRebase, "_upgrade_to_head")
     def test_file_content_preservation(
@@ -640,7 +640,7 @@ def downgrade() -> None:
             "10008a9b0c1d2e",
         ])
 
-    @patch.object(AlembicRebase, "_get_current_heads")
+    @patch.object(AlembicRebase, "_get_current_heads_from_files")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
     @patch.object(AlembicRebase, "_upgrade_to_head")
     def test_complete_rebase_workflow(
