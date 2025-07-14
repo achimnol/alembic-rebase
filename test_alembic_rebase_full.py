@@ -403,6 +403,7 @@ def downgrade() -> None:
 
         # Test parsing base migration
         file_path = rebase._find_migration_file("00004a7b9c2e1f")
+        assert file_path is not None
         revision, down_revision, content = rebase._parse_migration_file(file_path)
         assert revision == "00004a7b9c2e1f"
         assert down_revision is None
@@ -410,6 +411,7 @@ def downgrade() -> None:
 
         # Test parsing branch migration
         file_path = rebase._find_migration_file("1000f3e4d5c6b7")
+        assert file_path is not None
         revision, down_revision, content = rebase._parse_migration_file(file_path)
         assert revision == "1000f3e4d5c6b7"
         assert down_revision == "00004a7b9c2e1f"
@@ -439,6 +441,7 @@ def downgrade() -> None:
 
         # Find and backup original file
         original_file = rebase._find_migration_file("1000f3e4d5c6b7")
+        assert original_file is not None
         original_file.read_text()
 
         # Update the file (keep same revision ID, change down_revision)
@@ -483,6 +486,7 @@ def downgrade() -> None:
         original_files = {}
         for migration in migrations_to_rebase:
             file_path = rebase._find_migration_file(migration)
+            assert file_path is not None
             original_files[migration] = file_path.read_text()
 
         # Perform rewrite
@@ -503,11 +507,13 @@ def downgrade() -> None:
 
         # First rebased migration should point to last_top_migration
         b1_file = rebase._find_migration_file(b1_revision)
+        assert b1_file is not None
         _, down_rev_b1, _ = rebase._parse_migration_file(b1_file)
         assert down_rev_b1 == last_top_migration
 
         # Second rebased migration should point to first rebased migration
         b2_file = rebase._find_migration_file(b2_revision)
+        assert b2_file is not None
         _, down_rev_b2, _ = rebase._parse_migration_file(b2_file)
         assert down_rev_b2 == b1_revision
 
@@ -530,6 +536,7 @@ def downgrade() -> None:
 
         # Get original content
         original_file = rebase._find_migration_file("2000e7f8a9b4c5")
+        assert original_file is not None
         original_content = original_file.read_text()
 
         # Rewrite the file
@@ -537,6 +544,7 @@ def downgrade() -> None:
 
         # Get updated content (same file, updated linkage)
         updated_file = rebase._find_migration_file("2000e7f8a9b4c5")
+        assert updated_file is not None
         updated_content = updated_file.read_text()
 
         # Verify important content is preserved
@@ -640,92 +648,64 @@ def downgrade() -> None:
             "10008a9b0c1d2e",
         ])
 
-    @patch.object(AlembicRebase, "_get_current_heads_from_files")
     @patch.object(AlembicRebase, "_downgrade_to_revision")
     @patch.object(AlembicRebase, "_upgrade_to_head")
     def test_complete_rebase_workflow(
-        self, mock_upgrade, mock_downgrade, mock_get_heads, temp_alembic_env
+        self, mock_upgrade, mock_downgrade, temp_alembic_env
     ):
         """Test the complete end-to-end rebase workflow with file modifications."""
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
-        # Mock the database operations
-        mock_get_heads.return_value = ["10008a9b0c1d2e", "20003d6e7f8a9b"]
+        # Mock only the database operations (downgrade and upgrade)
         mock_downgrade.return_value = AsyncMock()
         mock_upgrade.return_value = AsyncMock()
 
         rebase = AlembicRebase(str(alembic_ini))
         rebase._load_alembic_config()  # Load config first
 
-        # Mock the alembic components to avoid actual ScriptDirectory operations
-        with (
-            patch("alembic_rebase.Config") as mock_config,
-            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
-        ):
-            mock_config.return_value = MagicMock()
-            mock_script_instance = MagicMock()
-            mock_script_dir.from_config.return_value = mock_script_instance
+        # Store original file contents
+        original_files = {}
+        for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
+            file_path = rebase._find_migration_file(revision)
+            assert file_path is not None
+            original_files[revision] = file_path.read_text()
 
-            # Setup mock migration chain
-            def create_mock_revision(rev_id, down_rev):
-                mock_rev = MagicMock()
-                mock_rev.revision = rev_id
-                mock_rev.down_revision = down_rev
-                return mock_rev
+        # Perform the complete rebase (mocking only the async database parts)
+        async def run_rebase():
+            await rebase.rebase("20003d6e7f8a9b", "10008a9b0c1d2e")
 
-            revisions = {
-                "00004a7b9c2e1f": create_mock_revision("00004a7b9c2e1f", None),
-                "1000f3e4d5c6b7": create_mock_revision(
-                    "1000f3e4d5c6b7", "00004a7b9c2e1f"
-                ),
-                "10008a9b0c1d2e": create_mock_revision(
-                    "10008a9b0c1d2e", "1000f3e4d5c6b7"
-                ),
-                "2000e7f8a9b4c5": create_mock_revision(
-                    "2000e7f8a9b4c5", "00004a7b9c2e1f"
-                ),
-                "20003d6e7f8a9b": create_mock_revision(
-                    "20003d6e7f8a9b", "2000e7f8a9b4c5"
-                ),
-            }
+        # Run the rebase - this should now work with actual temp files
+        asyncio.run(run_rebase())
 
-            mock_script_instance.get_revision.side_effect = (
-                lambda rev_id: revisions.get(rev_id)
-            )
+        # Check that files were actually modified (only linkage changes)
+        for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
+            file_path = rebase._find_migration_file(revision)
 
-            # Store original file contents
-            original_files = {}
-            for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
-                file_path = rebase._find_migration_file(revision)
-                original_files[revision] = file_path.read_text()
+            if file_path:  # If the file exists
+                new_content = file_path.read_text()
+                # Verify revision ID is unchanged
+                assert f"revision = '{revision}'" in new_content
 
-            # Perform the complete rebase (mocking the async parts)
-            async def run_rebase():
-                await rebase.rebase("20003d6e7f8a9b", "10008a9b0c1d2e")
+                # Verify the content was preserved
+                if revision == "2000e7f8a9b4c5":
+                    assert "Create posts table" in new_content
+                    assert "op.create_table" in new_content
+                elif revision == "20003d6e7f8a9b":
+                    assert "Add post tags" in new_content
+                    assert "Create tags table" in new_content
 
-            # This would normally run the full rebase, but we expect it to fail
-            # because we're mocking the alembic components
-            import contextlib
+        # Verify the file linkage has been updated correctly
+        # The first migration in the rebased chain should now point to the last migration of the base chain
+        b1_file = rebase._find_migration_file("2000e7f8a9b4c5")
+        assert b1_file is not None
+        _, down_rev_b1, _ = rebase._parse_migration_file(b1_file)
+        assert down_rev_b1 == "10008a9b0c1d2e"
 
-            with contextlib.suppress(Exception):
-                asyncio.run(run_rebase())
-
-            # Check that files were actually modified (only linkage changes)
-            for revision in ["2000e7f8a9b4c5", "20003d6e7f8a9b"]:
-                file_path = rebase._find_migration_file(revision)
-
-                if file_path:  # If the file exists
-                    new_content = file_path.read_text()
-                    # Verify revision ID is unchanged
-                    assert f"revision = '{revision}'" in new_content
-
-                    # Verify the content was preserved
-                    if revision == "2000e7f8a9b4c5":
-                        assert "Create posts table" in new_content
-                        assert "op.create_table" in new_content
-                    elif revision == "20003d6e7f8a9b":
-                        assert "Add post tags" in new_content
-                        assert "Create tags table" in new_content
+        # The second migration should still point to the first
+        b2_file = rebase._find_migration_file("20003d6e7f8a9b")
+        assert b2_file is not None
+        _, down_rev_b2, _ = rebase._parse_migration_file(b2_file)
+        assert down_rev_b2 == "2000e7f8a9b4c5"
 
     def test_common_ancestor_with_deep_history(self, temp_alembic_env):
         """Test common ancestor detection with multiple revisions before the common ancestor.
