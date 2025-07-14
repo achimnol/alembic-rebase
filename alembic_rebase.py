@@ -496,7 +496,8 @@ async def main() -> None:
         epilog="""
 Examples:
   %(prog)s 1000a1b2c3d4e5 2000f6e7d8c9ba
-  %(prog)s --alembic-ini ./configs/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+  %(prog)s -f ./configs/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+  %(prog)s --config ./configs/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
         """,
     )
 
@@ -509,7 +510,8 @@ Examples:
     )
 
     parser.add_argument(
-        "--alembic-ini",
+        "-f",
+        "--config",
         default="alembic.ini",
         help="Path to alembic.ini file (default: alembic.ini)",
     )
@@ -524,7 +526,7 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
 
     try:
-        rebase = AlembicRebase(args.alembic_ini)
+        rebase = AlembicRebase(args.config)
         await rebase.rebase(args.base_head, args.top_head)
     except AlembicRebaseError as e:
         logger.error(f"Rebase failed: {e}")

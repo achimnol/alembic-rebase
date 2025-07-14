@@ -318,25 +318,25 @@ def test_main_cli_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("base_head")
     parser.add_argument("top_head")
-    parser.add_argument("--alembic-ini", default="alembic.ini")
+    parser.add_argument("-f", "--config", default="alembic.ini")
     parser.add_argument("--verbose", "-v", action="store_true")
 
     args = parser.parse_args(["1000a1b2c3d4e5", "2000f6e7d8c9ba"])
     assert args.base_head == "1000a1b2c3d4e5"
     assert args.top_head == "2000f6e7d8c9ba"
-    assert args.alembic_ini == "alembic.ini"
+    assert args.config == "alembic.ini"
     assert not args.verbose
 
     args = parser.parse_args([
         "1000a1b2c3d4e5",
         "2000f6e7d8c9ba",
-        "--alembic-ini",
+        "--config",
         "custom.ini",
         "-v",
     ])
     assert args.base_head == "1000a1b2c3d4e5"
     assert args.top_head == "2000f6e7d8c9ba"
-    assert args.alembic_ini == "custom.ini"
+    assert args.config == "custom.ini"
     assert args.verbose
 
 

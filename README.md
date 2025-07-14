@@ -37,7 +37,7 @@ python alembic_rebase.py [options] <base_head> <top_head>
 
 ### Options
 
-- `--alembic-ini PATH`: Path to alembic.ini file (default: alembic.ini)
+- `-f, --config PATH`: Path to alembic.ini file (default: alembic.ini)
 - `--verbose, -v`: Enable verbose logging
 - `--help, -h`: Show help message
 
@@ -48,7 +48,9 @@ python alembic_rebase.py [options] <base_head> <top_head>
 python alembic_rebase.py 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Using custom alembic.ini location
-python alembic_rebase.py --alembic-ini ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+python alembic_rebase.py -f ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+# Or using long form
+python alembic_rebase.py --config ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Verbose output
 python alembic_rebase.py -v 1000a1b2c3d4e5 2000f6e7d8c9ba
