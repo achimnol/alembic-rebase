@@ -31,12 +31,12 @@ class AlembicRebaseError(Exception):
 class AlembicRebase:
     """Main class for handling alembic migration rebasing."""
 
-    def __init__(self, alembic_ini_path: str | None = None):
+    def __init__(self, alembic_ini_path: str | None = None) -> None:
         self.alembic_ini_path = alembic_ini_path or "alembic.ini"
-        self.config = None
-        self.script_dir = None
-        self.db_url = None
-        self.script_location = None
+        self.config: Config | None = None
+        self.script_dir: ScriptDirectory | None = None
+        self.db_url: str | None = None
+        self.script_location: str | None = None
         self.revision_mapping: dict[str, str] = {}  # old_revision -> new_revision
 
     def _load_alembic_config(self) -> None:
@@ -111,6 +111,7 @@ class AlembicRebase:
 
     def _get_migration_chain(self, revision: str) -> list[str]:
         """Get the chain of migrations leading to a specific revision."""
+        assert self.script_dir is not None, "Script directory not initialized"
         script = self.script_dir.get_revision(revision)
         chain = []
 
@@ -145,6 +146,7 @@ class AlembicRebase:
     def _find_migration_file(self, revision: str) -> Path | None:
         """Find the migration file for a given revision."""
         # Resolve script location relative to alembic.ini directory
+        assert self.script_location is not None, "Script location not initialized"
         ini_dir = Path(self.alembic_ini_path).parent
         script_location = ini_dir / self.script_location
         versions_dir = script_location / "versions"
@@ -336,6 +338,8 @@ class AlembicRebase:
         logger.info(f"Downgrading to revision: {revision}")
 
         # Use sync engine for alembic commands
+        assert self.db_url is not None, "Database URL not initialized"
+        assert self.config is not None, "Config not initialized"
         sync_url = self.db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
         self.config.set_main_option("sqlalchemy.url", sync_url)
 
@@ -346,6 +350,8 @@ class AlembicRebase:
         logger.info(f"Upgrading to head: {head}")
 
         # Use sync engine for alembic commands
+        assert self.db_url is not None, "Database URL not initialized"
+        assert self.config is not None, "Config not initialized"
         sync_url = self.db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
         self.config.set_main_option("sqlalchemy.url", sync_url)
 
@@ -426,7 +432,7 @@ class AlembicRebase:
         logger.info("Rebase completed successfully!")
 
 
-async def main():
+async def main() -> None:
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
         description="Rebase alembic migrations when heads are diverged",

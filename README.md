@@ -154,6 +154,9 @@ uv run python -m pytest test_alembic_rebase_simple.py test_alembic_rebase_full.p
 uv run ruff format .
 uv run ruff check --fix .
 
+# Run type checking
+uv run mypy alembic_rebase.py
+
 # Run the script
 uv run python alembic_rebase.py --help
 ```
