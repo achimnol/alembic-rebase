@@ -16,6 +16,8 @@ import asyncio
 import logging
 import re
 import sys
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from alembic import command
@@ -85,6 +87,17 @@ class AlembicRebase:
         if self._async_engine is None:
             self._async_engine = create_async_engine(self.db_url)
         return self._async_engine
+
+    async def _run_sync(self, func: Callable[[], None]) -> None:
+        """Run alembic migrations synchronously."""
+
+        def _run_sync_inner(conn: Connection) -> None:
+            self.config.attributes["connection"] = conn
+            func()
+
+        engine = self._get_async_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(_run_sync_inner)
 
     def _get_current_heads_from_files(self) -> list[str]:
         """Get current heads from migration files using alembic API.
@@ -415,16 +428,7 @@ class AlembicRebase:
         removing all migrations from both diverged branches.
         """
         logger.info(f"Downgrading to revision: {revision}")
-        async_engine = self._get_async_engine()
-
-        def run_downgrade(connection: Connection) -> None:
-            # Inject connection into alembic config
-            assert self.config is not None, "Config not initialized"
-            self.config.attributes["connection"] = connection
-            command.downgrade(self.config, revision)
-
-        async with async_engine.begin() as conn:
-            await conn.run_sync(run_downgrade)
+        await self._run_sync(partial(command.downgrade, self.config, revision))
 
     async def _upgrade_to_head(self, head: str) -> None:
         """Upgrade database to a specific head.
@@ -433,17 +437,7 @@ class AlembicRebase:
         Runs the regular alembic upgrade procedure using the new history chain.
         """
         logger.info(f"Upgrading to head: {head}")
-
-        async_engine = self._get_async_engine()
-
-        def run_upgrade(connection: Connection) -> None:
-            # Inject connection into alembic config
-            assert self.config is not None, "Config not initialized"
-            self.config.attributes["connection"] = connection
-            command.upgrade(self.config, head)
-
-        async with async_engine.begin() as conn:
-            await conn.run_sync(run_upgrade)
+        await self._run_sync(partial(command.upgrade, self.config, head))
 
     def _print_dry_run_analysis(
         self,

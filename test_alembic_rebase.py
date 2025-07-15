@@ -4,12 +4,12 @@
 import os
 import shutil
 import tempfile
+from functools import partial
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from testcontainers.postgres import PostgresContainer
 
 from alembic_rebase import AlembicRebase, AlembicRebaseError
@@ -21,7 +21,7 @@ class TestAlembicRebase:
     @pytest.fixture(scope="class")
     def postgres_container(self):
         """Set up a PostgreSQL container for testing."""
-        with PostgresContainer("postgres:15") as postgres:
+        with PostgresContainer("postgres:15", driver="asyncpg") as postgres:
             yield postgres
 
     @pytest.fixture
@@ -80,11 +80,13 @@ datefmt = %H:%M:%S
 
             # Create alembic env.py
             env_py = migrations_dir / "env.py"
-            env_py_content = """from logging.config import fileConfig
+            env_py_content = """
+from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
+import asyncio
 import os
 import sys
 
@@ -103,59 +105,31 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
-async def run_migrations_online() -> None:
-    # Check if connection is already provided in config attributes
-    connection = config.attributes.get("connection")
+def do_run_migrations(connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
 
-    if connection is None:
-        # Create async engine if no connection provided
-        configuration = config.get_section(config.config_ini_section)
-        db_url = configuration.get("sqlalchemy.url")
+async def run_async_migrations() -> None:
+    connectable = create_async_engine(config.get_main_option("sqlalchemy.url"))
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await connectable.dispose()
 
-        # Convert to async URL if needed
-        if db_url.startswith("postgresql://"):
-            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif db_url.startswith("postgresql+psycopg2://"):
-            db_url = db_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
-
-        async_engine = create_async_engine(db_url)
-
-        def run_migrations_in_sync(connection):
-            context.configure(
-                connection=connection, target_metadata=target_metadata
-            )
-
-            with context.begin_transaction():
-                context.run_migrations()
-
-        async with async_engine.begin() as conn:
-            await conn.run_sync(run_migrations_in_sync)
+def run_migrations_online() -> None:
+    connectable = config.attributes.get("connection", None)
+    if connectable is None:
+        asyncio.run(run_async_migrations())
     else:
-        # Use existing connection from config attributes
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
+        do_run_migrations(connectable)
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    import asyncio
-    try:
-        # Try to get the current event loop
-        loop = asyncio.get_running_loop()
-        # If we're already in an event loop, create a task
-        task = asyncio.create_task(run_migrations_online())
-        # This will be scheduled to run in the current loop
-    except RuntimeError:
-        # No event loop is running, safe to use asyncio.run
-        asyncio.run(run_migrations_online())
+    run_migrations_online()
 """
             env_py.write_text(env_py_content)
 
@@ -223,8 +197,7 @@ def downgrade() -> None:
         rebase = AlembicRebase(str(alembic_ini))
 
         # Initialize the alembic_version table
-        config = Config(str(alembic_ini))
-        command.stamp(config, "head")
+        await rebase._run_sync(partial(command.stamp, rebase.config, "head"))
 
         heads = rebase._get_current_heads_from_files()
         assert heads == []
@@ -380,10 +353,10 @@ def downgrade() -> None:
 
         # Create branched migrations
         migrations = [
-            {"revision": "base", "down_revision": None},
-            {"revision": "branch_a1", "down_revision": "base"},
+            {"revision": "root", "down_revision": None},
+            {"revision": "branch_a1", "down_revision": "root"},
             {"revision": "branch_a2", "down_revision": "branch_a1"},
-            {"revision": "branch_b1", "down_revision": "base"},
+            {"revision": "branch_b1", "down_revision": "root"},
             {"revision": "branch_b2", "down_revision": "branch_b1"},
         ]
 
@@ -392,7 +365,7 @@ def downgrade() -> None:
         rebase = AlembicRebase(str(alembic_ini))
 
         ancestor = rebase._find_common_ancestor("branch_a2", "branch_b2")
-        assert ancestor == "base"
+        assert ancestor == "root"
 
     def test_find_common_ancestor_with_mocks(self):
         """Test finding common ancestor with mocked dependencies."""
@@ -454,7 +427,7 @@ def test_main_cli_args():
     from unittest.mock import patch
 
     # Test basic argument parsing
-    test_args = ["alembic_rebase.py", "target123", "base456"]
+    test_args = ["alembic_rebase.py", "base456", "top123"]
     with patch.object(sys, "argv", test_args):
         # Import here to avoid running main during import
 
@@ -462,13 +435,13 @@ def test_main_cli_args():
         import argparse
 
         parser = argparse.ArgumentParser()
-        parser.add_argument("target_head")
         parser.add_argument("base_head")
+        parser.add_argument("top_head")
         parser.add_argument("--alembic-ini", default="alembic.ini")
 
-        args = parser.parse_args(["target123", "base456"])
-        assert args.target_head == "target123"
+        args = parser.parse_args(["base456", "top123"])
         assert args.base_head == "base456"
+        assert args.top_head == "top123"
         assert args.alembic_ini == "alembic.ini"
 
 
