@@ -192,6 +192,7 @@ class AlembicRebase:
         revision back to the root, then returns the chain in chronological order.
         """
         assert self.script_dir is not None, "Script directory not initialized"
+
         script = self.script_dir.get_revision(revision)
         chain = []
 
@@ -215,12 +216,15 @@ class AlembicRebase:
         Identifies the last migration that both branches share by comparing
         their migration chains.
         """
-        top_chain = set(self._get_migration_chain(top_head))
+        top_chain = self._get_migration_chain(top_head)
         base_chain = self._get_migration_chain(base_head)
+
+        # Convert to sets for faster lookup
+        top_chain_set = set(top_chain)
 
         # Iterate through base_chain in reverse order to find the most recent common ancestor
         for revision in reversed(base_chain):
-            if revision in top_chain:
+            if revision in top_chain_set:
                 return revision
 
         return None
@@ -256,7 +260,9 @@ class AlembicRebase:
 
         # Extract down_revision
         down_revision_match = re.search(
-            r"^down_revision\s*=\s*(['\"]([^'\"]*)['\"]|None)", content, re.MULTILINE
+            r"^down_revision\s*=\s*(['\"]([^'\"]*)['\"]|None)",
+            content,
+            re.MULTILINE,
         )
         down_revision = None
         if down_revision_match and down_revision_match.group(1) != "None":
@@ -277,7 +283,7 @@ class AlembicRebase:
         # Update revision
         content = re.sub(
             r"^revision\s*=\s*['\"]([^'\"]+)['\"]",
-            f"revision = '{new_revision}'",
+            f'revision = "{new_revision}"',
             content,
             flags=re.MULTILINE,
         )
@@ -286,7 +292,7 @@ class AlembicRebase:
         if new_down_revision:
             content = re.sub(
                 r"^down_revision\s*=\s*(['\"]([^'\"]*)['\"]|None)",
-                f"down_revision = '{new_down_revision}'",
+                f'down_revision = "{new_down_revision}"',
                 content,
                 flags=re.MULTILINE,
             )
@@ -408,7 +414,6 @@ class AlembicRebase:
         removing all migrations from both diverged branches.
         """
         logger.info(f"Downgrading to revision: {revision}")
-
         async_engine = self._get_async_engine()
 
         def run_downgrade(connection: Connection) -> None:
@@ -570,7 +575,10 @@ Examples:
         help="Show current migration file heads and exit",
     )
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(message)s",
+    )
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 

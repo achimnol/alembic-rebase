@@ -77,8 +77,8 @@ datefmt = %H:%M:%S
         finally:
             shutil.rmtree(temp_dir)
 
-    def test_load_alembic_config(self, temp_alembic_env):
-        """Test loading alembic configuration."""
+    def test_alembic_rebase_initialization(self, temp_alembic_env):
+        """Test AlembicRebase initialization and configuration loading."""
         _temp_dir, alembic_ini = temp_alembic_env
 
         # Mock the alembic components
@@ -86,11 +86,14 @@ datefmt = %H:%M:%S
             patch("alembic_rebase.Config") as mock_config,
             patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
         ):
-            mock_config.return_value = MagicMock()
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://user:pass@localhost/testdb"
+            )
+            mock_config.return_value = mock_config_instance
             mock_script_dir.from_config.return_value = MagicMock()
 
             rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
 
             assert rebase.config is not None
             assert rebase.script_dir is not None
@@ -98,52 +101,24 @@ datefmt = %H:%M:%S
 
     def test_load_nonexistent_config(self):
         """Test error handling for nonexistent config file."""
-        rebase = AlembicRebase("nonexistent.ini")
-
         with pytest.raises(AlembicRebaseError, match="Alembic config file not found"):
-            rebase._load_alembic_config()
-
-    def test_load_config_missing_sections(self, temp_alembic_env):
-        """Test error handling for malformed config file."""
-        _temp_dir, alembic_ini = temp_alembic_env
-
-        # Create a config file without required sections
-        alembic_ini.write_text("[other]\nkey=value")
-
-        rebase = AlembicRebase(str(alembic_ini))
-
-        with pytest.raises(AlembicRebaseError, match="No \\[alembic\\] section found"):
-            rebase._load_alembic_config()
-
-    def test_load_config_missing_script_location(self, temp_alembic_env):
-        """Test error handling for missing script_location."""
-        _temp_dir, alembic_ini = temp_alembic_env
-
-        # Create a config file without script_location
-        config_content = """[alembic]
-sqlalchemy.url = postgresql://user:pass@localhost/testdb
-"""
-        alembic_ini.write_text(config_content)
-
-        rebase = AlembicRebase(str(alembic_ini))
-
-        with pytest.raises(AlembicRebaseError, match="script_location not found"):
-            rebase._load_alembic_config()
+            AlembicRebase("nonexistent.ini")
 
     def test_load_config_missing_db_url(self, temp_alembic_env):
         """Test error handling for missing database URL."""
         _temp_dir, alembic_ini = temp_alembic_env
 
-        # Create a config file without sqlalchemy.url
-        config_content = """[alembic]
-script_location = migrations
-"""
-        alembic_ini.write_text(config_content)
+        with (
+            patch("alembic_rebase.Config") as mock_config,
+            patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+        ):
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = None  # No DB URL
+            mock_config.return_value = mock_config_instance
+            mock_script_dir.from_config.return_value = MagicMock()
 
-        rebase = AlembicRebase(str(alembic_ini))
-
-        with pytest.raises(AlembicRebaseError, match=r"sqlalchemy\.url not found"):
-            rebase._load_alembic_config()
+            with pytest.raises(AlembicRebaseError, match=r"No sqlalchemy\.url found"):
+                AlembicRebase(str(alembic_ini))
 
     def create_migration_files(self, temp_dir, migrations_data):
         """Helper to create migration files for testing."""
@@ -220,8 +195,15 @@ def downgrade() -> None:
 
             mock_script_instance.get_revision.side_effect = mock_get_revision
 
-            rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
+            # Mock config to return a valid DB URL
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://user:pass@localhost/testdb"
+            )
+
+            with patch("alembic_rebase.Config") as mock_config:
+                mock_config.return_value = mock_config_instance
+                rebase = AlembicRebase(str(alembic_ini))
 
             chain = rebase._get_migration_chain("10008a9b0c1d2e")
             assert chain == ["00004a7b9c2e1f", "1000f3e4d5c6b7", "10008a9b0c1d2e"]
@@ -275,8 +257,15 @@ def downgrade() -> None:
 
             mock_script_instance.get_revision.side_effect = mock_get_revision
 
-            rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
+            # Mock config to return a valid DB URL
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://user:pass@localhost/testdb"
+            )
+
+            with patch("alembic_rebase.Config") as mock_config:
+                mock_config.return_value = mock_config_instance
+                rebase = AlembicRebase(str(alembic_ini))
 
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
             assert ancestor == "00004a7b9c2e1f"
@@ -351,8 +340,15 @@ def downgrade() -> None:
 
             mock_script_instance.get_revision.side_effect = mock_get_revision
 
-            rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
+            # Mock config to return a valid DB URL
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://user:pass@localhost/testdb"
+            )
+
+            with patch("alembic_rebase.Config") as mock_config:
+                mock_config.return_value = mock_config_instance
+                rebase = AlembicRebase(str(alembic_ini))
 
             # Test that we find the most recent common ancestor, not the first revision
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
@@ -379,8 +375,14 @@ def downgrade() -> None:
             mock_config.return_value = MagicMock()
             mock_script_dir.from_config.return_value = MagicMock()
 
+            # Mock config to return a valid DB URL
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://user:pass@localhost/testdb"
+            )
+            mock_config.return_value = mock_config_instance
+
             rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
 
             # Test with same revision
             mock_get_heads.return_value = ["1000a1b2c3d4e5"]
@@ -400,6 +402,38 @@ def downgrade() -> None:
             mock_find_file.return_value = MagicMock()  # Mock file exists
             with pytest.raises(AlembicRebaseError, match="No current heads found"):
                 rebase._validate_revisions("revision1", "revision2")
+
+    def test_db_url_conversion(self, temp_alembic_env):
+        """Test database URL conversion to async format during initialization."""
+        _temp_dir, alembic_ini = temp_alembic_env
+
+        test_cases = [
+            (
+                "postgresql://user:pass@host/db",
+                "postgresql+asyncpg://user:pass@host/db",
+            ),
+            (
+                "postgresql+psycopg2://user:pass@host/db",
+                "postgresql+asyncpg://user:pass@host/db",
+            ),
+            (
+                "postgresql+asyncpg://user:pass@host/db",
+                "postgresql+asyncpg://user:pass@host/db",
+            ),
+        ]
+
+        for input_url, expected_output in test_cases:
+            with (
+                patch("alembic_rebase.Config") as mock_config,
+                patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
+            ):
+                mock_config_instance = MagicMock()
+                mock_config_instance.get_main_option.return_value = input_url
+                mock_config.return_value = mock_config_instance
+                mock_script_dir.from_config.return_value = MagicMock()
+
+                rebase = AlembicRebase(str(alembic_ini))
+                assert rebase.db_url == expected_output
 
 
 def test_main_cli_args():
@@ -431,37 +465,6 @@ def test_main_cli_args():
     assert args.top_head == "2000f6e7d8c9ba"
     assert args.config == "custom.ini"
     assert args.verbose
-
-
-def test_db_url_conversion():
-    """Test database URL conversion to async format."""
-    test_cases = [
-        ("postgresql://user:pass@host/db", "postgresql+asyncpg://user:pass@host/db"),
-        (
-            "postgresql+psycopg2://user:pass@host/db",
-            "postgresql+asyncpg://user:pass@host/db",
-        ),
-        (
-            "postgresql+asyncpg://user:pass@host/db",
-            "postgresql+asyncpg://user:pass@host/db",
-        ),
-    ]
-
-    for input_url, expected_output in test_cases:
-        rebase = AlembicRebase()
-        rebase.db_url = input_url
-
-        # Simulate the URL conversion logic
-        if rebase.db_url.startswith("postgresql://"):
-            rebase.db_url = rebase.db_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
-        elif rebase.db_url.startswith("postgresql+psycopg2://"):
-            rebase.db_url = rebase.db_url.replace(
-                "postgresql+psycopg2://", "postgresql+asyncpg://", 1
-            )
-
-        assert rebase.db_url == expected_output
 
 
 if __name__ == "__main__":

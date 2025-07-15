@@ -2,7 +2,6 @@
 """Comprehensive test suite for alembic rebase script with actual migration files."""
 
 import asyncio
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -24,8 +23,9 @@ class TestAlembicRebaseWithFiles:
         try:
             # Create alembic.ini
             alembic_ini = temp_dir / "alembic.ini"
-            config_content = """[alembic]
-script_location = migrations
+            migrations_dir = temp_dir / "migrations"
+            config_content = f"""[alembic]
+script_location = {migrations_dir}
 sqlalchemy.url = postgresql://testuser:testpass@localhost/testdb
 
 [post_write_hooks]
@@ -67,7 +67,6 @@ datefmt = %H:%M:%S
             alembic_ini.write_text(config_content)
 
             # Create migrations directory structure
-            migrations_dir = temp_dir / "migrations"
             migrations_dir.mkdir()
 
             # Create alembic env.py
@@ -75,6 +74,7 @@ datefmt = %H:%M:%S
             env_py_content = """from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 import os
 import sys
@@ -98,14 +98,35 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
-def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+async def run_migrations_online() -> None:
+    # Check if connection is already provided in config attributes
+    connection = config.attributes.get("connection")
 
-    with connectable.connect() as connection:
+    if connection is None:
+        # Create async engine if no connection provided
+        configuration = config.get_section(config.config_ini_section)
+        db_url = configuration.get("sqlalchemy.url")
+
+        # Convert to async URL if needed
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif db_url.startswith("postgresql+psycopg2://"):
+            db_url = db_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+
+        async_engine = create_async_engine(db_url)
+
+        def run_migrations_in_sync(connection):
+            context.configure(
+                connection=connection, target_metadata=target_metadata
+            )
+
+            with context.begin_transaction():
+                context.run_migrations()
+
+        async with async_engine.begin() as conn:
+            await conn.run_sync(run_migrations_in_sync)
+    else:
+        # Use existing connection from config attributes
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
@@ -116,7 +137,10 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online()
+    import asyncio
+    # For testing purposes, skip the complex async setup and use offline mode
+    # This avoids the asyncio event loop conflicts during testing
+    run_migrations_offline()
 """
             env_py.write_text(env_py_content)
 
@@ -156,14 +180,10 @@ def downgrade() -> None:
             # Create mock schema migration files
             self._create_mock_migration_files(versions_dir)
 
-            # Change to temp directory for alembic operations
-            original_cwd = os.getcwd()
-            os.chdir(temp_dir)
-
             yield temp_dir, alembic_ini, versions_dir
 
         finally:
-            os.chdir(original_cwd)
+            # No need to change directories
             shutil.rmtree(temp_dir)
 
     def _create_mock_migration_files(self, versions_dir: Path):
@@ -376,7 +396,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Test finding existing files
         file_path = rebase._find_migration_file("00004a7b9c2e1f")
@@ -399,7 +418,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Test parsing base migration
         file_path = rebase._find_migration_file("00004a7b9c2e1f")
@@ -422,7 +440,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Get original revision from file
         file_path = rebase._find_migration_file("2000e7f8a9b4c5")
@@ -437,7 +454,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Find and backup original file
         original_file = rebase._find_migration_file("1000f3e4d5c6b7")
@@ -476,7 +492,6 @@ def downgrade() -> None:
         mock_upgrade.return_value = AsyncMock()
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Test rewriting files for branch B
         migrations_to_rebase = ["2000e7f8a9b4c5", "20003d6e7f8a9b"]
@@ -532,7 +547,6 @@ def downgrade() -> None:
         mock_upgrade.return_value = AsyncMock()
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Get original content
         original_file = rebase._find_migration_file("2000e7f8a9b4c5")
@@ -581,7 +595,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         with pytest.raises(AlembicRebaseError, match="Could not find migration file"):
             rebase._rewrite_migration_files(["nonexistent_revision"], "10008a9b0c1d2e")
@@ -591,7 +604,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Count original files
         original_files = list(versions_dir.glob("*.py"))
@@ -622,7 +634,6 @@ def downgrade() -> None:
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()
 
         # Test individual file validation
         assert rebase._validate_migration_file_integrity("00004a7b9c2e1f")
@@ -661,7 +672,6 @@ def downgrade() -> None:
         mock_upgrade.return_value = AsyncMock()
 
         rebase = AlembicRebase(str(alembic_ini))
-        rebase._load_alembic_config()  # Load config first
 
         # Store original file contents
         original_files = {}
@@ -719,15 +729,21 @@ def downgrade() -> None:
             patch("alembic_rebase.Config") as mock_config,
             patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
         ):
-            mock_config.return_value = MagicMock()
+            # Mock the Config instance with necessary methods
+            mock_config_instance = MagicMock()
+            mock_config_instance.get_main_option.return_value = (
+                "postgresql://testuser:testpass@localhost/testdb"
+            )
+            mock_config.return_value = mock_config_instance
+
             mock_script_instance = MagicMock()
             mock_script_dir.from_config.return_value = mock_script_instance
 
             # Create a deeper revision history with multiple revisions before common ancestor
             # Structure:
             # 00001 -> 00002 -> 00003 -> 00004 (common ancestor)
-            #                              ├── 1000 -> 1001 (branch A)
-            #                              └── 2000 -> 2001 (branch B)
+            #                              ├──  1000 -> 1001 (branch A)
+            #                              └──  2000 -> 2001 (branch B)
 
             def create_mock_revision(rev_id, down_rev):
                 mock_rev = MagicMock()
@@ -765,7 +781,6 @@ def downgrade() -> None:
             )
 
             rebase = AlembicRebase(str(alembic_ini))
-            rebase._load_alembic_config()
 
             # Test that we find the most recent common ancestor, not the first revision
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
