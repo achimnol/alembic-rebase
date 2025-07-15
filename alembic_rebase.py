@@ -444,7 +444,67 @@ class AlembicRebase:
         async with async_engine.begin() as conn:
             await conn.run_sync(run_upgrade)
 
-    async def rebase(self, base_head: str, top_head: str) -> None:
+    def _print_dry_run_analysis(
+        self,
+        base_head: str,
+        top_head: str,
+        common_ancestor: str,
+        migrations_to_rebase: list[str],
+        last_top_migration: str,
+    ) -> None:
+        """Print detailed analysis results for dry-run mode."""
+        print("\n" + "=" * 60)
+        print("DRY RUN - Migration Rebase Analysis")
+        print("=" * 60)
+        print(f"Base head (to be rebased): {base_head}")
+        print(f"Top head (target):         {top_head}")
+        print(f"Common ancestor:           {common_ancestor}")
+        print(f"Last top migration:        {last_top_migration}")
+        print()
+
+        print("Migrations to rebase:")
+        for i, migration in enumerate(migrations_to_rebase, 1):
+            print(f"  {i}. {migration}")
+        print()
+
+        print("Planned history after rebase:")
+        print("  Current top chain will remain:")
+        top_chain = self._get_migration_chain(top_head)
+        for i, migration in enumerate(top_chain, 1):
+            if migration == common_ancestor:
+                print(f"    {i}. {migration} (common ancestor)")
+            else:
+                print(f"    {i}. {migration}")
+
+        print("  Rebased migrations will be appended:")
+        for i, migration in enumerate(migrations_to_rebase, len(top_chain) + 1):
+            print(f"    {i}. {migration} (rebased)")
+        print()
+
+        print("Migration file changes that would be made:")
+        for i, revision in enumerate(migrations_to_rebase):
+            new_down_rev = last_top_migration if i == 0 else migrations_to_rebase[i - 1]
+
+            file_path = self._find_migration_file(revision)
+            if file_path:
+                _, current_down_rev, _ = self._parse_migration_file(file_path)
+                print(f"  {file_path.name}:")
+                print(f"    down_revision: {current_down_rev} → {new_down_rev}")
+        print()
+
+        print("Database operations that would be performed:")
+        print(f"  1. Downgrade to: {common_ancestor}")
+        print(f"  2. Upgrade to: {top_head}")
+        for i, migration in enumerate(migrations_to_rebase, 3):
+            print(f"  {i}. Upgrade to: {migration}")
+        print()
+        print("=" * 60)
+        print("DRY RUN COMPLETE - No actual changes were made")
+        print("=" * 60)
+
+    async def rebase(
+        self, base_head: str, top_head: str, dry_run: bool = False
+    ) -> None:
         """Rebase migrations by putting base_head below top_head in history.
 
         The rebasing process consists of four main phases:
@@ -490,13 +550,6 @@ class AlembicRebase:
         migrations_to_rebase = base_chain[common_index + 1 :]
         logger.info(f"Migrations to rebase: {migrations_to_rebase}")
 
-        # === Phase 2: Downgrade to Common Ancestor ===
-        logger.info("Phase 2: Downgrade to Common Ancestor")
-        await self._downgrade_to_revision(common_ancestor)
-
-        # === Phase 3: History Rewriting ===
-        logger.info("Phase 3: History Rewriting")
-
         # Find the rebasing point
         # Get the revision ID of the last migration in the top_head chain after the common ancestor
         top_chain_after_ancestor = [rev for rev in top_chain if rev != common_ancestor]
@@ -507,6 +560,27 @@ class AlembicRebase:
 
         # Get the last migration in the top chain after the common ancestor
         last_top_migration = top_chain_after_ancestor[-1]
+
+        # === DRY RUN MODE ===
+        if dry_run:
+            logger.info(
+                "DRY RUN MODE: Printing analysis results without making changes"
+            )
+            self._print_dry_run_analysis(
+                base_head,
+                top_head,
+                common_ancestor,
+                migrations_to_rebase,
+                last_top_migration,
+            )
+            return
+
+        # === Phase 2: Downgrade to Common Ancestor ===
+        logger.info("Phase 2: Downgrade to Common Ancestor")
+        await self._downgrade_to_revision(common_ancestor)
+
+        # === Phase 3: History Rewriting ===
+        logger.info("Phase 3: History Rewriting")
 
         # File Rewriting - update migration file linkage for rebase
         self._rewrite_migration_files(migrations_to_rebase, last_top_migration)
@@ -574,6 +648,11 @@ Examples:
         action="store_true",
         help="Show current migration file heads and exit",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform analysis without executing database migrations (dry run mode)",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO,
@@ -597,7 +676,7 @@ Examples:
                 "base_head and top_head are required unless using --show-heads"
             )
 
-        await rebase.rebase(args.base_head, args.top_head)
+        await rebase.rebase(args.base_head, args.top_head, args.dry_run)
     except AlembicRebaseError as e:
         logger.error(f"Rebase failed: {e}")
         sys.exit(1)
