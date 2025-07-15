@@ -44,9 +44,10 @@ This project uses `asyncpg` with `sqlalchemy` and `asyncio`.
 Since `alembic` provides only synchronous APIs, executing alembic APIs inside async contexts require a special construct like:
 ```python
 from alembic import command
+from alembic.config import Config
 
-alembic_config = ...
-db_url = ""
+alembic_config = Config(alembic_ini_path)
+db_url = alembic_config.get_main_option("sqlalchemy.url")
 
 def invoke_alembic_command():
     # Call the alembic command APIs
@@ -58,3 +59,5 @@ async with async_engine.begin() as conn:
     alembic_config.attributes["connection"] = conn
     await conn.run_sync(invoke_alembic_command)
 ```
+
+When you make code changes, ensure the function/method arguments and return values are explicitly type-annotated.

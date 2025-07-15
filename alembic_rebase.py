@@ -13,7 +13,6 @@ The rebasing process follows the 4-phase approach described in SPEC.md:
 
 import argparse
 import asyncio
-import configparser
 import logging
 import re
 import sys
@@ -22,8 +21,10 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from yarl import URL
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -42,42 +43,25 @@ class AlembicRebase:
     """
 
     def __init__(self, alembic_ini_path: str | None = None) -> None:
-        self.alembic_ini_path = alembic_ini_path or "alembic.ini"
-        self.config: Config | None = None
-        self.script_dir: ScriptDirectory | None = None
-        self.db_url: str = ""
-        self.script_location: str | None = None
-
-    def _load_alembic_config(self) -> None:
         """Load alembic configuration from alembic.ini file.
 
         Part of Phase 1: Analysis and Validation.
         Parses alembic.ini to extract script_location and sqlalchemy.url,
         converts database URL to async format, and initializes alembic objects.
         """
+        self.alembic_ini_path = alembic_ini_path or "alembic.ini"
         if not Path(self.alembic_ini_path).exists():
             raise AlembicRebaseError(
                 f"Alembic config file not found: {self.alembic_ini_path}"
             )
 
-        # Parse the INI file
-        config_parser = configparser.ConfigParser()
-        config_parser.read(self.alembic_ini_path)
-
-        # Get script location
-        if "alembic" not in config_parser:
-            raise AlembicRebaseError("No [alembic] section found in config file")
-
-        self.script_location = config_parser.get(
-            "alembic", "script_location", fallback=None
-        )
-        if not self.script_location:
-            raise AlembicRebaseError("script_location not found in alembic config")
+        # Initialize alembic config
+        self.config = Config(self.alembic_ini_path)
 
         # Get database URL
-        db_url = config_parser.get("alembic", "sqlalchemy.url", fallback=None)
-        if not db_url:
-            raise AlembicRebaseError("sqlalchemy.url not found in alembic config")
+        db_url = self.config.get_main_option("sqlalchemy.url")
+        if db_url is None:
+            raise AlembicRebaseError("No sqlalchemy.url found in the config file")
 
         # Convert sync postgres URL to async if needed
         if db_url.startswith("postgresql://"):
@@ -86,16 +70,21 @@ class AlembicRebase:
             db_url = db_url.replace(
                 "postgresql+psycopg2://", "postgresql+asyncpg://", 1
             )
-
         self.db_url = db_url
-
-        # Initialize alembic config
-        self.config = Config(self.alembic_ini_path)
-        self.script_dir = ScriptDirectory.from_config(self.config)
-
+        db_url_for_logging = URL(db_url).with_password("***")
         logger.info(f"Loaded alembic config from {self.alembic_ini_path}")
-        logger.info(f"Script location: {self.script_location}")
-        logger.info(f"Database URL: {self.db_url.split('@')[0]}@***")
+        logger.info(f"Database URL: {db_url_for_logging}")
+
+        self.script_dir = ScriptDirectory.from_config(self.config)
+        logger.info(f"Script location: {self.script_dir.dir}")
+
+        self._async_engine = None
+
+    def _get_async_engine(self) -> AsyncEngine:
+        """Get or create async engine for database operations."""
+        if self._async_engine is None:
+            self._async_engine = create_async_engine(self.db_url)
+        return self._async_engine
 
     def _get_current_heads_from_files(self) -> list[str]:
         """Get current heads from migration files using alembic API.
@@ -420,13 +409,16 @@ class AlembicRebase:
         """
         logger.info(f"Downgrading to revision: {revision}")
 
-        # Use sync engine for alembic commands
-        assert self.db_url is not None, "Database URL not initialized"
-        assert self.config is not None, "Config not initialized"
-        sync_url = self.db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-        self.config.set_main_option("sqlalchemy.url", sync_url)
+        async_engine = self._get_async_engine()
 
-        command.downgrade(self.config, revision)
+        def run_downgrade(connection: Connection) -> None:
+            # Inject connection into alembic config
+            assert self.config is not None, "Config not initialized"
+            self.config.attributes["connection"] = connection
+            command.downgrade(self.config, revision)
+
+        async with async_engine.begin() as conn:
+            await conn.run_sync(run_downgrade)
 
     async def _upgrade_to_head(self, head: str) -> None:
         """Upgrade database to a specific head.
@@ -436,13 +428,16 @@ class AlembicRebase:
         """
         logger.info(f"Upgrading to head: {head}")
 
-        # Use sync engine for alembic commands
-        assert self.db_url is not None, "Database URL not initialized"
-        assert self.config is not None, "Config not initialized"
-        sync_url = self.db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-        self.config.set_main_option("sqlalchemy.url", sync_url)
+        async_engine = self._get_async_engine()
 
-        command.upgrade(self.config, head)
+        def run_upgrade(connection: Connection) -> None:
+            # Inject connection into alembic config
+            assert self.config is not None, "Config not initialized"
+            self.config.attributes["connection"] = connection
+            command.upgrade(self.config, head)
+
+        async with async_engine.begin() as conn:
+            await conn.run_sync(run_upgrade)
 
     async def rebase(self, base_head: str, top_head: str) -> None:
         """Rebase migrations by putting base_head below top_head in history.
@@ -462,9 +457,6 @@ class AlembicRebase:
 
         # === Phase 1: Analysis and Validation ===
         logger.info("Phase 1: Analysis and Validation")
-
-        # Configuration Loading
-        self._load_alembic_config()
 
         # Revision Validation
         self._validate_revisions(top_head, base_head)
@@ -553,38 +545,32 @@ Examples:
   %(prog)s --config ./configs/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
         """,
     )
-
     parser.add_argument(
         "base_head",
         nargs="?",
         help="The revision ID that will be moved below the top head",
     )
-
     parser.add_argument(
         "top_head",
         nargs="?",
         help="The revision ID that will remain at the top of the history",
     )
-
     parser.add_argument(
         "-f",
         "--config",
         default="alembic.ini",
         help="Path to alembic.ini file (default: alembic.ini)",
     )
-
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
-
     parser.add_argument(
         "--show-heads",
         action="store_true",
         help="Show current migration file heads and exit",
     )
-
     args = parser.parse_args()
-
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -593,7 +579,6 @@ Examples:
 
         # Handle --show-heads option
         if args.show_heads:
-            rebase._load_alembic_config()
             current_heads = rebase._get_current_heads_from_files()
             print(f"Current migration file heads: {current_heads}")
             return
