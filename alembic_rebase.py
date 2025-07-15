@@ -89,7 +89,7 @@ class AlembicRebase:
         return self._async_engine
 
     async def _run_sync(self, func: Callable[[], None]) -> None:
-        """Run alembic migrations synchronously."""
+        """Run alembic command APIs in async contexts."""
 
         def _run_sync_inner(conn: Connection) -> None:
             self.config.attributes["connection"] = conn
