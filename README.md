@@ -18,10 +18,10 @@ This script requires Python 3.12+ and can be run in any virtual environment with
 
 ```bash
 # Using uv (recommended)
-uv add "sqlalchemy>=1.4,<2.0" alembic asyncpg
+uv add "sqlalchemy>=1.4,<2.0" alembic asyncpg yarl
 
 # Or using pip
-pip install "sqlalchemy>=1.4,<2.0" alembic asyncpg
+pip install "sqlalchemy>=1.4,<2.0" alembic asyncpg yarl
 ```
 
 ## Usage

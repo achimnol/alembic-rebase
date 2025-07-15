@@ -251,7 +251,7 @@ The tool respects standard alembic environment variable overrides:
 - SQLAlchemy 1.4.x
 - alembic
 - asyncpg
-- configparser (built-in)
+- yarl
 
 ### Development Dependencies
 - pytest (testing)
