@@ -13,11 +13,11 @@ The rebasing process follows the 4-phase approach described in SPEC.md:
 
 import argparse
 import asyncio
+import functools
 import logging
 import re
 import sys
 from collections.abc import Callable
-from functools import partial
 from pathlib import Path
 
 from alembic import command
@@ -53,9 +53,7 @@ class AlembicRebase:
         """
         self.alembic_ini_path = alembic_ini_path or "alembic.ini"
         if not Path(self.alembic_ini_path).exists():
-            raise AlembicRebaseError(
-                f"Alembic config file not found: {self.alembic_ini_path}"
-            )
+            raise AlembicRebaseError(f"Alembic config file not found: {self.alembic_ini_path}")
 
         # Initialize alembic config
         self.config = Config(self.alembic_ini_path)
@@ -69,9 +67,7 @@ class AlembicRebase:
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         elif db_url.startswith("postgresql+psycopg2://"):
-            db_url = db_url.replace(
-                "postgresql+psycopg2://", "postgresql+asyncpg://", 1
-            )
+            db_url = db_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
         self.db_url = db_url
         db_url_for_logging = URL(db_url).with_password("***")
         logger.info(f"Loaded alembic config from {self.alembic_ini_path}")
@@ -91,9 +87,19 @@ class AlembicRebase:
     async def _run_sync(self, func: Callable[[], None]) -> None:
         """Run alembic command APIs in async contexts."""
 
+        @functools.wraps(func)
         def _run_sync_inner(conn: Connection) -> None:
             self.config.attributes["connection"] = conn
-            func()
+            match func:
+                case functools.partial():
+                    func_name = func.func.__name__
+                case _:
+                    func_name = func.__name__
+            try:
+                func()
+            except Exception as e:
+                print(f"Error while running alembic command: {func_name}(): {e!r}", file=sys.stderr)
+                raise
 
         engine = self._get_async_engine()
         async with engine.begin() as conn:
@@ -193,9 +199,7 @@ class AlembicRebase:
             )
 
         logger.info(f"Validation passed. Current migration file heads: {current_heads}")
-        logger.info(
-            f"Top head reachable: {top_reachable}, Base head reachable: {base_reachable}"
-        )
+        logger.info(f"Top head reachable: {top_reachable}, Base head reachable: {base_reachable}")
 
     def _get_migration_chain(self, revision: str) -> list[str]:
         """Get the chain of migrations leading to a specific revision.
@@ -264,9 +268,7 @@ class AlembicRebase:
         content = file_path.read_text()
 
         # Extract revision ID
-        revision_match = re.search(
-            r"^revision\s*=\s*['\"]([^'\"]+)['\"]", content, re.MULTILINE
-        )
+        revision_match = re.search(r"^revision\s*=\s*['\"]([^'\"]+)['\"]", content, re.MULTILINE)
         if not revision_match:
             raise AlembicRebaseError(f"Could not find revision in {file_path}")
         revision = revision_match.group(1)
@@ -338,9 +340,7 @@ class AlembicRebase:
         for i, revision in enumerate(migrations_to_rebase):
             file_path = self._find_migration_file(revision)
             if not file_path:
-                raise AlembicRebaseError(
-                    f"Could not find migration file for revision {revision}"
-                )
+                raise AlembicRebaseError(f"Could not find migration file for revision {revision}")
 
             # Determine new down_revision
             if i == 0:
@@ -351,9 +351,7 @@ class AlembicRebase:
                 new_down_revision = migrations_to_rebase[i - 1]
 
             # Update only the down_revision, keep original revision ID
-            self._update_migration_file(
-                file_path, revision, revision, new_down_revision
-            )
+            self._update_migration_file(file_path, revision, revision, new_down_revision)
 
     def _validate_migration_file_integrity(self, revision: str) -> bool:
         """Validate that a migration file has proper structure and syntax.
@@ -378,9 +376,7 @@ class AlembicRebase:
 
             for pattern in required_patterns:
                 if not re.search(pattern, content, re.MULTILINE):
-                    logger.error(
-                        f"Migration file {file_path} missing required pattern: {pattern}"
-                    )
+                    logger.error(f"Migration file {file_path} missing required pattern: {pattern}")
                     return False
 
             # Try to compile the Python code
@@ -428,7 +424,7 @@ class AlembicRebase:
         removing all migrations from both diverged branches.
         """
         logger.info(f"Downgrading to revision: {revision}")
-        await self._run_sync(partial(command.downgrade, self.config, revision))
+        await self._run_sync(functools.partial(command.downgrade, self.config, revision))
 
     async def _upgrade_to_head(self, head: str) -> None:
         """Upgrade database to a specific head.
@@ -437,7 +433,7 @@ class AlembicRebase:
         Runs the regular alembic upgrade procedure using the new history chain.
         """
         logger.info(f"Upgrading to head: {head}")
-        await self._run_sync(partial(command.upgrade, self.config, head))
+        await self._run_sync(functools.partial(command.upgrade, self.config, head))
 
     def _print_dry_run_analysis(
         self,
@@ -477,9 +473,7 @@ class AlembicRebase:
 
         print("Migration file changes that would be made:")
         for i, revision in enumerate(migrations_to_rebase):
-            new_down_rev = (
-                last_base_migration if i == 0 else migrations_to_rebase[i - 1]
-            )
+            new_down_rev = last_base_migration if i == 0 else migrations_to_rebase[i - 1]
 
             file_path = self._find_migration_file(revision)
             if file_path:
@@ -491,9 +485,7 @@ class AlembicRebase:
 
         print("Database operations that would be performed:")
         if len(migrations_to_rebase) == 1:
-            print(
-                f"  1. Downgrade to: {common_ancestor} (rolling back {migrations_to_rebase[0]})"
-            )
+            print(f"  1. Downgrade to: {common_ancestor} (rolling back {migrations_to_rebase[0]})")
         else:
             print(
                 f"  1. Downgrade to: {common_ancestor} (rolling back {migrations_to_rebase[0]}..{migrations_to_rebase[-1]})"
@@ -505,9 +497,7 @@ class AlembicRebase:
         print("DRY RUN COMPLETE - No actual changes were made")
         print("=" * 60)
 
-    async def rebase(
-        self, base_head: str, top_head: str, dry_run: bool = False
-    ) -> None:
+    async def rebase(self, base_head: str, top_head: str, dry_run: bool = False) -> None:
         """Rebase migrations by putting base_head below top_head in history.
 
         The rebasing process consists of four main phases:
@@ -555,22 +545,16 @@ class AlembicRebase:
 
         # Find the rebasing point
         # Get the revision ID of the last migration in the top_head chain after the common ancestor
-        base_chain_after_ancestor = [
-            rev for rev in base_chain if rev != common_ancestor
-        ]
+        base_chain_after_ancestor = [rev for rev in base_chain if rev != common_ancestor]
         if not base_chain_after_ancestor:
-            raise AlembicRebaseError(
-                "No migrations found in top chain after common ancestor"
-            )
+            raise AlembicRebaseError("No migrations found in top chain after common ancestor")
 
         # Get the last migration in the top chain after the common ancestor
         last_base_migration = base_chain_after_ancestor[-1]
 
         # === DRY RUN MODE ===
         if dry_run:
-            logger.info(
-                "DRY RUN MODE: Printing analysis results without making changes"
-            )
+            logger.info("DRY RUN MODE: Printing analysis results without making changes")
             self._print_dry_run_analysis(
                 base_head,
                 top_head,
@@ -639,9 +623,7 @@ Examples:
         default="alembic.ini",
         help="Path to alembic.ini file (default: alembic.ini)",
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument(
         "--dry-run",
         action="store_true",

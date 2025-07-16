@@ -5,7 +5,7 @@ preview = true
 target-version = "py312"
 
 # Line length
-line-length = 88
+line-length = 100
 
 [lint]
 # Enable commonly used rules
@@ -18,8 +18,8 @@ select = [
     "UP",    # pyupgrade
     "B",     # flake8-bugbear
     "C4",    # flake8-comprehensions
-    "PIE",   # flake8-pie
-    "SIM",   # flake8-simplify
+    # "PIE",   # flake8-pie
+    # "SIM",   # flake8-simplify
     "RUF",   # Ruff-specific rules
 ]
 ignore = [
