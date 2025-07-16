@@ -139,7 +139,7 @@ Migration structure:
     └── 20003d6e7f8a9b (maybe in DB) [HEAD]
 ```
 
-Running: `python alembic_rebase.py 10008a9b0c1d2e 20003d6e7f8a9b`
+Running: `python alembic-rebase.py 10008a9b0c1d2e 20003d6e7f8a9b`
 
 **Phase 1 - Analysis:**
 - Common ancestor: `00004a7b9c2e1f`

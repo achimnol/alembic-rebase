@@ -80,7 +80,7 @@ def downgrade() -> None:
 To rebase branch B onto branch A:
 
 ```bash
-python alembic_rebase.py 10008a9b0c1d2e 20003d6e7f8a9b
+python alembic-rebase.py 10008a9b0c1d2e 20003d6e7f8a9b
 ```
 
 This command means:

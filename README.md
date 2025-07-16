@@ -27,7 +27,7 @@ pip install "sqlalchemy>=1.4,<2.0" alembic asyncpg yarl
 ## Usage
 
 ```bash
-python alembic_rebase.py [options] <base_head> <top_head>
+python alembic-rebase.py [options] <base_head> <top_head>
 ```
 
 ### Arguments
@@ -46,18 +46,18 @@ python alembic_rebase.py [options] <base_head> <top_head>
 
 ```bash
 # Basic usage with default alembic.ini
-python alembic_rebase.py 1000a1b2c3d4e5 2000f6e7d8c9ba
+python alembic-rebase.py 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Using custom alembic.ini location
-python alembic_rebase.py -f ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+python alembic-rebase.py -f ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
 # Or using long form
-python alembic_rebase.py --config ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
+python alembic-rebase.py --config ./configs/db1/alembic.ini 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Verbose output
-python alembic_rebase.py -v 1000a1b2c3d4e5 2000f6e7d8c9ba
+python alembic-rebase.py -v 1000a1b2c3d4e5 2000f6e7d8c9ba
 
 # Show current migration file heads
-python alembic_rebase.py --show-heads
+python alembic-rebase.py --show-heads
 ```
 
 ## How It Works
@@ -183,7 +183,7 @@ uv run ruff format .
 uv run ruff check --fix .
 
 # Run type checking
-uv run mypy alembic_rebase.py
+uv run mypy alembic-rebase.py
 
 # Install pre-commit hooks (runs ruff and mypy automatically on commit)
 uv run pre-commit install
@@ -192,7 +192,7 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 
 # Run the script
-uv run python alembic_rebase.py --help
+uv run python alembic-rebase.py --help
 ```
 
 ## License
