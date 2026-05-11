@@ -352,9 +352,7 @@ def downgrade() -> None:
 
             # Test that we find the most recent common ancestor, not the first revision
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
-            assert (
-                ancestor == "00004d4e5f6a7b"
-            )  # Should be the common ancestor, not 00001a1b2c3d4e
+            assert ancestor == "00004d4e5f6a7b"  # Should be the common ancestor, not 00001a1b2c3d4e
 
             # Test with reversed order
             ancestor = rebase._find_common_ancestor("20003d6e7f8a9b", "10008a9b0c1d2e")
@@ -367,9 +365,7 @@ def downgrade() -> None:
         with (
             patch("alembic_rebase.Config") as mock_config,
             patch("alembic_rebase.ScriptDirectory") as mock_script_dir,
-            patch.object(
-                AlembicRebase, "_get_current_heads_from_files"
-            ) as mock_get_heads,
+            patch.object(AlembicRebase, "_get_current_heads_from_files") as mock_get_heads,
             patch.object(AlembicRebase, "_find_migration_file") as mock_find_file,
         ):
             mock_config.return_value = MagicMock()
@@ -392,9 +388,7 @@ def downgrade() -> None:
 
             # Test with nonexistent migration file
             mock_find_file.return_value = None  # Mock file doesn't exist
-            with pytest.raises(
-                AlembicRebaseError, match="does not exist in migration files"
-            ):
+            with pytest.raises(AlembicRebaseError, match="does not exist in migration files"):
                 rebase._validate_revisions("nonexistent1", "nonexistent2")
 
             # Test with no current heads

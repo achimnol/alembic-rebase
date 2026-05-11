@@ -451,9 +451,7 @@ def downgrade() -> None:
         updated_file = rebase._find_migration_file("1000f3e4d5c6b7")
         assert updated_file is not None
 
-        revision_parsed, down_parsed, _content = rebase._parse_migration_file(
-            updated_file
-        )
+        revision_parsed, down_parsed, _content = rebase._parse_migration_file(updated_file)
         assert revision_parsed == "1000f3e4d5c6b7"  # Revision ID unchanged
         assert down_parsed == new_down_revision  # down_revision updated
 
@@ -564,9 +562,7 @@ def downgrade() -> None:
                     import re
 
                     orig_rev = re.search(r"revision\s*=\s*['\"]([^'\"]+)['\"]", orig)
-                    updated_rev = re.search(
-                        r"revision\s*=\s*['\"]([^'\"]+)['\"]", updated
-                    )
+                    updated_rev = re.search(r"revision\s*=\s*['\"]([^'\"]+)['\"]", updated)
                     if orig_rev and updated_rev:
                         if orig_rev.group(1) != updated_rev.group(1):
                             raise AssertionError(
@@ -605,9 +601,7 @@ def downgrade() -> None:
         original_count = len(original_files)
 
         # Rewrite some migrations
-        rebase._rewrite_migration_files(
-            ["2000e7f8a9b4c5", "20003d6e7f8a9b"], "10008a9b0c1d2e"
-        )
+        rebase._rewrite_migration_files(["2000e7f8a9b4c5", "20003d6e7f8a9b"], "10008a9b0c1d2e")
 
         # Count files after rewrite
         new_files = list(versions_dir.glob("*.py"))
@@ -618,9 +612,7 @@ def downgrade() -> None:
 
         # Verify specific files still exist (same revision IDs)
         remaining_files = [
-            f
-            for f in new_files
-            if "2000e7f8a9b4c5" in f.name or "20003d6e7f8a9b" in f.name
+            f for f in new_files if "2000e7f8a9b4c5" in f.name or "20003d6e7f8a9b" in f.name
         ]
         assert len(remaining_files) == 2  # Both files should still exist
 
@@ -656,9 +648,7 @@ def downgrade() -> None:
 
     @patch.object(AlembicRebase, "_downgrade_to_revision")
     @patch.object(AlembicRebase, "_upgrade_to_head")
-    def test_complete_rebase_workflow(
-        self, mock_upgrade, mock_downgrade, temp_alembic_env
-    ):
+    def test_complete_rebase_workflow(self, mock_upgrade, mock_downgrade, temp_alembic_env):
         """Test the complete end-to-end rebase workflow with file modifications."""
         _temp_dir, alembic_ini, _versions_dir = temp_alembic_env
 
@@ -708,9 +698,7 @@ def downgrade() -> None:
         b1_file = rebase._find_migration_file("2000e7f8a9b4c5")
         assert b1_file is not None
         _, down_rev_b1, _ = rebase._parse_migration_file(b1_file)
-        assert (
-            down_rev_b1 == "00004a7b9c2e1f"
-        )  # Should remain pointing to common ancestor
+        assert down_rev_b1 == "00004a7b9c2e1f"  # Should remain pointing to common ancestor
 
         # Branch A migrations should be rebased to come after Branch B
         # First Branch A migration should point to the end of Branch B
@@ -761,40 +749,22 @@ def downgrade() -> None:
 
             revisions = {
                 "00001a1b2c3d4e": create_mock_revision("00001a1b2c3d4e", None),
-                "00002b2c3d4e5f": create_mock_revision(
-                    "00002b2c3d4e5f", "00001a1b2c3d4e"
-                ),
-                "00003c3d4e5f6a": create_mock_revision(
-                    "00003c3d4e5f6a", "00002b2c3d4e5f"
-                ),
-                "00004d4e5f6a7b": create_mock_revision(
-                    "00004d4e5f6a7b", "00003c3d4e5f6a"
-                ),
-                "1000f3e4d5c6b7": create_mock_revision(
-                    "1000f3e4d5c6b7", "00004d4e5f6a7b"
-                ),
-                "10008a9b0c1d2e": create_mock_revision(
-                    "10008a9b0c1d2e", "1000f3e4d5c6b7"
-                ),
-                "2000e7f8a9b4c5": create_mock_revision(
-                    "2000e7f8a9b4c5", "00004d4e5f6a7b"
-                ),
-                "20003d6e7f8a9b": create_mock_revision(
-                    "20003d6e7f8a9b", "2000e7f8a9b4c5"
-                ),
+                "00002b2c3d4e5f": create_mock_revision("00002b2c3d4e5f", "00001a1b2c3d4e"),
+                "00003c3d4e5f6a": create_mock_revision("00003c3d4e5f6a", "00002b2c3d4e5f"),
+                "00004d4e5f6a7b": create_mock_revision("00004d4e5f6a7b", "00003c3d4e5f6a"),
+                "1000f3e4d5c6b7": create_mock_revision("1000f3e4d5c6b7", "00004d4e5f6a7b"),
+                "10008a9b0c1d2e": create_mock_revision("10008a9b0c1d2e", "1000f3e4d5c6b7"),
+                "2000e7f8a9b4c5": create_mock_revision("2000e7f8a9b4c5", "00004d4e5f6a7b"),
+                "20003d6e7f8a9b": create_mock_revision("20003d6e7f8a9b", "2000e7f8a9b4c5"),
             }
 
-            mock_script_instance.get_revision.side_effect = (
-                lambda rev_id: revisions.get(rev_id)
-            )
+            mock_script_instance.get_revision.side_effect = lambda rev_id: revisions.get(rev_id)
 
             rebase = AlembicRebase(str(alembic_ini))
 
             # Test that we find the most recent common ancestor, not the first revision
             ancestor = rebase._find_common_ancestor("10008a9b0c1d2e", "20003d6e7f8a9b")
-            assert (
-                ancestor == "00004d4e5f6a7b"
-            )  # Should be the common ancestor, not 00001a1b2c3d4e
+            assert ancestor == "00004d4e5f6a7b"  # Should be the common ancestor, not 00001a1b2c3d4e
 
             # Test with reversed argument order
             ancestor = rebase._find_common_ancestor("20003d6e7f8a9b", "10008a9b0c1d2e")

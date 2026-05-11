@@ -394,9 +394,7 @@ def downgrade() -> None:
         rebase = AlembicRebase(str(alembic_ini))
 
         # Test with no current heads - adjust expected error message
-        with pytest.raises(
-            AlembicRebaseError, match="does not exist in migration files"
-        ):
+        with pytest.raises(AlembicRebaseError, match="does not exist in migration files"):
             rebase._validate_revisions("nonexistent1", "nonexistent2")
 
     def test_validate_revisions_with_mocks(self):
@@ -415,9 +413,7 @@ def downgrade() -> None:
                 rebase._validate_revisions("head1", "head1")
 
             # Test with nonexistent revision
-            with pytest.raises(
-                AlembicRebaseError, match="does not exist in migration files"
-            ):
+            with pytest.raises(AlembicRebaseError, match="does not exist in migration files"):
                 rebase._validate_revisions("nonexistent", "head2")
 
 
